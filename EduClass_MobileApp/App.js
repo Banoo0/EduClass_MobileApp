@@ -1,36 +1,31 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { supabase } from './src/core/supabase';
+import { DarkTheme, NavigationContainer } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AuthProvider } from './src/context/AuthContext';
+import RootNavigator from './src/navigation/RootNavigator';
+import { colors } from './src/core/theme';
+
+const navTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: colors.bg,
+    card: colors.card,
+    border: colors.border,
+    primary: colors.primary,
+    text: colors.text,
+  },
+};
 
 export default function App() {
-  const [status, setStatus] = useState('Mengecek koneksi...');
-
-  useEffect(() => {
-    async function tes() {
-      const { data, error } = await supabase.from('schools').select('nama_sekolah');
-      if (error) {
-        setStatus('Gagal: ' + error.message);
-      } else {
-        setStatus('Terhubung! Jumlah sekolah: ' + data.length);
-      }
-    }
-    tes();
-  }, []);
-
   return (
-    <View style={styles.container}>
-      <Text style={styles.text}>{status}</Text>
-    </View>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <NavigationContainer theme={navTheme}>
+          <StatusBar style="light" />
+          <RootNavigator />
+        </NavigationContainer>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1d26',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  text: { color: '#ffee4a', fontSize: 18, textAlign: 'center' },
-});
