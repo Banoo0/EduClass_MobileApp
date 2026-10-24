@@ -1,7 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import AppButton from '../components/AppButton';
+import AppButton from '../components/AppButton.js';
 import { useAuth } from '../context/AuthContext';
 import AuthStack from './AuthStack';
 import StudentTabs from './StudentTabs';

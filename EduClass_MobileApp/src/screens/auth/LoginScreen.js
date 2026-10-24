@@ -3,7 +3,7 @@ import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleS
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AuthHeader from '../../components/AuthHeader';
 import AppInput from '../../components/AppInput';
-import AppButton from '../../components/AppButton';
+import AppButton from '../../components/AppButton.js';
 import FormAlert from '../../components/FormAlert';
 import { useAuth } from '../../context/AuthContext';
 import { colors, radius } from '../../core/theme';

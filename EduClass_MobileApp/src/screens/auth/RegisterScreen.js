@@ -7,7 +7,7 @@ import AppInput from '../../components/AppInput';
 import AppButton from '../../components/AppButton';
 import FormAlert from '../../components/FormAlert';
 import { useAuth } from '../../context/AuthContext';
-import { fetchSchools } from '../../services/authService';
+import { fetchSchools } from '../../services/authServices';
 import { colors, radius } from '../../core/theme';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

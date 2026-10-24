@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
 import { supabase } from '../core/supabase';
-import { fetchProfile, signInWithEmail, signOutUser, signUpWithEmail } from '../services/authService';
+import { fetchProfile, signInWithEmail, signOutUser, signUpWithEmail } from '../services/authServices';
 
 const AuthContext = createContext(null);
 
