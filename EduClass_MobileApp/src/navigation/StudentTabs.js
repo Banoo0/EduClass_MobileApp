@@ -1,6 +1,7 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import PlaceholderScreen from '../components/PlaceholderScreen';
+import BerandaScreen from '../screens/student/BerandaScreen';
 import ProfilScreen from '../screens/student/ProfilScreen';
 import { colors } from '../core/theme';
 
@@ -9,7 +10,6 @@ const Tab = createBottomTabNavigator();
 // Ganti komponen sementara ini dengan layar aslimu, contoh:
 //   import BerandaScreen from '../screens/student/BerandaScreen';
 //   <Tab.Screen name="Beranda" component={BerandaScreen} />
-const Beranda = () => <PlaceholderScreen title="Beranda" owner="Afni" />;
 const Tugas = () => <PlaceholderScreen title="Tugas" />;
 const Jadwal = () => <PlaceholderScreen title="Jadwal" owner="Rizki" />;
 const Kelas = () => <PlaceholderScreen title="Kelas" owner="Rizki" />;
@@ -36,7 +36,7 @@ export default function StudentTabs() {
         ),
       })}
     >
-      <Tab.Screen name="Beranda" component={Beranda} />
+      <Tab.Screen name="Beranda" component={BerandaScreen} />
       <Tab.Screen name="Tugas" component={Tugas} />
       <Tab.Screen name="Jadwal" component={Jadwal} />
       <Tab.Screen name="Kelas" component={Kelas} />
