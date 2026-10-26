@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import PlaceholderScreen from '../components/PlaceholderScreen';
+import BerandaScreen from '../screens/teacher/BerandaScreen';
 import ProfilScreen from '../screens/teacher/ProfilScreen';
 import { colors } from '../core/theme';
 
@@ -10,7 +11,6 @@ const Tab = createBottomTabNavigator();
 // Ganti komponen sementara ini dengan layar aslimu, contoh:
 //   import KelolaKelasScreen from '../screens/teacher/KelolaKelasScreen';
 //   <Tab.Screen name="KelolaKelas" component={KelolaKelasScreen} options={{ title: 'Kelola Kelas' }} />
-const Beranda = () => <PlaceholderScreen title="Beranda guru" owner="Afni" />;
 const KelolaKelas = () => <PlaceholderScreen title="Kelola kelas" owner="Rizki" />;
 const BuatTugas = () => <PlaceholderScreen title="Buat tugas" />;
 const Jadwal = () => <PlaceholderScreen title="Jadwal mengajar" owner="Rizki" />;
@@ -44,7 +44,7 @@ export default function TeacherTabs() {
         },
       })}
     >
-      <Tab.Screen name="Beranda" component={Beranda} />
+      <Tab.Screen name="Beranda" component={BerandaScreen} />
       <Tab.Screen name="KelolaKelas" component={KelolaKelas} options={{ title: 'Kelola Kelas' }} />
       <Tab.Screen name="BuatTugas" component={BuatTugas} options={{ title: 'Buat Tugas' }} />
       <Tab.Screen name="Jadwal" component={Jadwal} />
