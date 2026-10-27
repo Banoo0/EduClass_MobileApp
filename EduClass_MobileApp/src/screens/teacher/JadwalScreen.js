@@ -3,7 +3,6 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
+import DashboardHeader from '../../components/DashboardHeader';
 import AppButton from '../../components/AppButton';
 import AppInput from '../../components/AppInput';
 import FormAlert from '../../components/FormAlert';
@@ -59,6 +59,10 @@ const DAY_ORDER = Object.fromEntries(
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+// =====================================================
+// HELPER
+// =====================================================
+
 function formatTime(value) {
   return value ? String(value).slice(0, 5) : '--:--';
 }
@@ -73,7 +77,9 @@ function toMinutes(value) {
 }
 
 function getStatus(schedule, selectedDay, today, nowMinutes) {
-  if (selectedDay !== today) return 'Terjadwal';
+  if (selectedDay !== today) {
+    return 'Terjadwal';
+  }
 
   const start = toMinutes(schedule.jam_mulai);
   const end = toMinutes(schedule.jam_selesai);
@@ -82,20 +88,26 @@ function getStatus(schedule, selectedDay, today, nowMinutes) {
     return 'Sedang Berlangsung';
   }
 
-  if (nowMinutes < start) return 'Mendatang';
+  if (nowMinutes < start) {
+    return 'Mendatang';
+  }
 
   return 'Selesai';
 }
 
 function getRelationClass(schedule) {
-  if (Array.isArray(schedule.classes)) {
+  if (Array.isArray(schedule?.classes)) {
     return schedule.classes[0] || null;
   }
 
-  return schedule.classes || null;
+  return schedule?.classes || null;
 }
 
-export default function JadwalScreen() {
+// =====================================================
+// JADWAL GURU
+// =====================================================
+
+export default function JadwalScreen({ navigation }) {
   const { user, profile } = useAuth();
   const teacherId = user?.id || profile?.id;
 
@@ -105,6 +117,7 @@ export default function JadwalScreen() {
   const [error, setError] = useState('');
 
   const today = DAY_BY_JS[new Date().getDay()];
+
   const [selectedDay, setSelectedDay] = useState(
     DAY_BY_JS[new Date().getDay()]
   );
@@ -119,9 +132,9 @@ export default function JadwalScreen() {
   const [editRuang, setEditRuang] = useState('');
   const [editGedung, setEditGedung] = useState('');
 
-  // ================================================
-  // BACA JADWAL GURU
-  // ================================================
+  // ===================================================
+  // MEMUAT JADWAL GURU
+  // ===================================================
 
   const loadSchedules = useCallback(async (isRefresh = false) => {
     if (!teacherId) {
@@ -132,8 +145,11 @@ export default function JadwalScreen() {
       return;
     }
 
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
 
     setError('');
 
@@ -148,12 +164,15 @@ export default function JadwalScreen() {
 
       const sorted = [...(data || [])].sort((a, b) => {
         const dayDifference =
-          (DAY_ORDER[a.hari] ?? 99) - (DAY_ORDER[b.hari] ?? 99);
+          (DAY_ORDER[a.hari] ?? 99) -
+          (DAY_ORDER[b.hari] ?? 99);
 
-        if (dayDifference !== 0) return dayDifference;
+        if (dayDifference !== 0) {
+          return dayDifference;
+        }
 
-        return String(a.jam_mulai).localeCompare(
-          String(b.jam_mulai)
+        return String(a.jam_mulai || '').localeCompare(
+          String(b.jam_mulai || '')
         );
       });
 
@@ -172,9 +191,9 @@ export default function JadwalScreen() {
     }, [loadSchedules])
   );
 
-  // ================================================
-  // BUKA FORM EDIT JADWAL
-  // ================================================
+  // ===================================================
+  // MEMBUKA FORM EDIT
+  // ===================================================
 
   const openEdit = (schedule) => {
     setEditingSchedule(schedule);
@@ -188,13 +207,15 @@ export default function JadwalScreen() {
   };
 
   const closeEdit = () => {
+    if (saving) return;
+
     setEditingSchedule(null);
     setEditError('');
   };
 
-  // ================================================
-  // SIMPAN PERUBAHAN JADWAL
-  // ================================================
+  // ===================================================
+  // MENYIMPAN PERUBAHAN JADWAL
+  // ===================================================
 
   const handleSaveEdit = async () => {
     if (!editingSchedule) return;
@@ -204,7 +225,14 @@ export default function JadwalScreen() {
       !TIME_PATTERN.test(editJamSelesai) ||
       editJamSelesai <= editJamMulai
     ) {
-      setEditError('Periksa format dan urutan jam pelajaran.');
+      setEditError(
+        'Periksa format dan urutan jam pelajaran.'
+      );
+      return;
+    }
+
+    if (!teacherId) {
+      setEditError('Akun guru tidak ditemukan.');
       return;
     }
 
@@ -219,7 +247,9 @@ export default function JadwalScreen() {
           classId: editingSchedule.class_id,
           teacherId,
           scheduleId: editingSchedule.id,
-          judul: editingSchedule.judul || kelas?.nama_mapel,
+          judul:
+            editingSchedule.judul ||
+            kelas?.nama_mapel,
           hari: editHari,
           jam_mulai: editJamMulai,
           jam_selesai: editJamSelesai,
@@ -232,29 +262,37 @@ export default function JadwalScreen() {
         return;
       }
 
-      // Perbarui data lokal sambil mempertahankan relasi kelas.
+      // Pertahankan relasi kelas ketika memperbarui data lokal.
       setSchedules((previous) =>
         previous.map((item) =>
           item.id === data.id
-            ? { ...item, ...data, classes: item.classes }
+            ? {
+                ...item,
+                ...data,
+                classes: item.classes,
+              }
             : item
         )
       );
 
-      closeEdit();
+      setEditingSchedule(null);
+      setEditError('');
     } catch (err) {
-      setEditError(err.message || 'Gagal menyimpan jadwal.');
+      setEditError(
+        err.message || 'Gagal menyimpan jadwal.'
+      );
     } finally {
       setSaving(false);
     }
   };
 
-  // ================================================
-  // STATUS WAKTU
-  // ================================================
+  // ===================================================
+  // STATUS DAN RINGKASAN HARI INI
+  // ===================================================
 
   const now = new Date();
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const nowMinutes =
+    now.getHours() * 60 + now.getMinutes();
 
   const dateLabel = now.toLocaleDateString('id-ID', {
     day: 'numeric',
@@ -269,27 +307,41 @@ export default function JadwalScreen() {
   const daySchedules = schedules
     .filter((item) => item.hari === selectedDay)
     .sort((a, b) =>
-      String(a.jam_mulai).localeCompare(String(b.jam_mulai))
+      String(a.jam_mulai || '').localeCompare(
+        String(b.jam_mulai || '')
+      )
     );
 
-  const activeCount = todaysSchedules.filter((item) =>
-    getStatus(item, today, today, nowMinutes) === 'Sedang Berlangsung'
+  const activeCount = todaysSchedules.filter(
+    (item) =>
+      getStatus(item, today, today, nowMinutes) ===
+      'Sedang Berlangsung'
   ).length;
 
-  const completedCount = todaysSchedules.filter((item) =>
-    getStatus(item, today, today, nowMinutes) === 'Selesai'
+  const completedCount = todaysSchedules.filter(
+    (item) =>
+      getStatus(item, today, today, nowMinutes) === 'Selesai'
   ).length;
 
-  const upcomingCount = todaysSchedules.filter((item) =>
-    getStatus(item, today, today, nowMinutes) === 'Mendatang'
+  const upcomingCount = todaysSchedules.filter(
+    (item) =>
+      getStatus(item, today, today, nowMinutes) === 'Mendatang'
   ).length;
 
-  // ================================================
-  // TAMPILAN
-  // ================================================
+  // ===================================================
+  // TAMPILAN HALAMAN
+  // ===================================================
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* HEADER YANG SAMA DENGAN BERANDA GURU */}
+      <DashboardHeader
+        variant="guru"
+        title="Jadwal"
+        onAvatarPress={() => navigation.navigate('Profil')}
+      />
+
+      {/* FOOTER SUDAH DIKELOLA OLEH TEACHERTABS.JS */}
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -300,7 +352,7 @@ export default function JadwalScreen() {
           />
         }
       >
-        {/* TAB HARI */}
+        {/* PILIH HARI */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -333,7 +385,7 @@ export default function JadwalScreen() {
           })}
         </ScrollView>
 
-        {/* HEADER HARI */}
+        {/* JUDUL DAN TANGGAL */}
         <View style={styles.heading}>
           <Text style={styles.headingTitle}>
             {selectedDay === today
@@ -360,12 +412,14 @@ export default function JadwalScreen() {
 
         <FormAlert message={error} />
 
+        {/* LOADING DAN DAFTAR JADWAL */}
         {loading ? (
           <View style={styles.loading}>
             <ActivityIndicator
               size="large"
               color={colors.primary}
             />
+
             <Text style={styles.emptyText}>
               Memuat jadwal mengajar...
             </Text>
@@ -383,14 +437,14 @@ export default function JadwalScreen() {
             </Text>
 
             <Text style={styles.emptyText}>
-              Belum ada jadwal pada hari {selectedDay}. Kamu dapat
-              menambahkan atau mengatur jadwal melalui halaman
-              Kelola Kelas.
+              Belum ada jadwal pada hari {selectedDay}.
+              Kamu dapat menambahkan atau mengatur jadwal
+              melalui halaman Kelola Kelas.
             </Text>
           </View>
         ) : (
           <View style={styles.scheduleList}>
-            {daySchedules.map((item, index) => {
+            {daySchedules.map((item) => {
               const kelas = getRelationClass(item);
 
               const subject =
@@ -401,18 +455,28 @@ export default function JadwalScreen() {
               const classMeta = [
                 kelas?.rombel,
                 kelas?.tahun_ajaran,
-              ].filter(Boolean).join(' • ');
+              ]
+                .filter(Boolean)
+                .join(' • ');
 
               const location = [
                 item.ruang,
                 item.gedung,
-              ].filter(Boolean).join(' • ');
+              ]
+                .filter(Boolean)
+                .join(' • ');
 
               const status = getStatus(
                 item,
                 selectedDay,
                 today,
                 nowMinutes
+              );
+
+              const duration = Math.max(
+                0,
+                toMinutes(item.jam_selesai) -
+                  toMinutes(item.jam_mulai)
               );
 
               return (
@@ -451,19 +515,19 @@ export default function JadwalScreen() {
 
                       <View style={styles.timeBox}>
                         <Text style={styles.timeText}>
-                          {formatTime(item.jam_mulai)} – {formatTime(item.jam_selesai)}
+                          {formatTime(item.jam_mulai)} –{' '}
+                          {formatTime(item.jam_selesai)}
                         </Text>
+
                         <Text style={styles.durationText}>
-                          {Math.max(
-                            0,
-                            toMinutes(item.jam_selesai) -
-                              toMinutes(item.jam_mulai)
-                          )} menit
+                          {duration} menit
                         </Text>
                       </View>
                     </View>
 
-                    <Text style={styles.subject}>{subject}</Text>
+                    <Text style={styles.subject}>
+                      {subject}
+                    </Text>
 
                     {classMeta ? (
                       <Text style={styles.classMeta}>
@@ -477,6 +541,7 @@ export default function JadwalScreen() {
                         size={16}
                         color={colors.textMuted}
                       />
+
                       <Text style={styles.locationText}>
                         {location || 'Ruang belum diatur'}
                       </Text>
@@ -500,36 +565,46 @@ export default function JadwalScreen() {
         )}
 
         {/* RINGKASAN HARI INI */}
-        {selectedDay === today && todaysSchedules.length > 0 && (
-          <View style={styles.daySummary}>
-            <Text style={styles.summaryHeading}>
-              Ringkasan Hari Ini
-            </Text>
+        {selectedDay === today &&
+          todaysSchedules.length > 0 && (
+            <View style={styles.daySummary}>
+              <Text style={styles.summaryHeading}>
+                Ringkasan Hari Ini
+              </Text>
 
-            <View style={styles.summaryStats}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {activeCount}
-                </Text>
-                <Text style={styles.statLabel}>Berlangsung</Text>
-              </View>
+              <View style={styles.summaryStats}>
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>
+                    {activeCount}
+                  </Text>
 
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {upcomingCount}
-                </Text>
-                <Text style={styles.statLabel}>Mendatang</Text>
-              </View>
+                  <Text style={styles.statLabel}>
+                    Berlangsung
+                  </Text>
+                </View>
 
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {completedCount}
-                </Text>
-                <Text style={styles.statLabel}>Selesai</Text>
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>
+                    {upcomingCount}
+                  </Text>
+
+                  <Text style={styles.statLabel}>
+                    Mendatang
+                  </Text>
+                </View>
+
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>
+                    {completedCount}
+                  </Text>
+
+                  <Text style={styles.statLabel}>
+                    Selesai
+                  </Text>
+                </View>
               </View>
             </View>
-          </View>
-        )}
+          )}
       </ScrollView>
 
       {/* MODAL EDIT JADWAL */}
@@ -550,8 +625,9 @@ export default function JadwalScreen() {
                   <Text style={styles.modalTitle}>
                     Edit Jadwal
                   </Text>
+
                   <Text style={styles.modalSubtitle}>
-                    {getRelationClass(editingSchedule || {})?.nama_mapel ||
+                    {getRelationClass(editingSchedule)?.nama_mapel ||
                       editingSchedule?.judul ||
                       'Jadwal pelajaran'}
                   </Text>
@@ -560,6 +636,7 @@ export default function JadwalScreen() {
                 <Pressable
                   onPress={closeEdit}
                   style={styles.closeButton}
+                  disabled={saving}
                 >
                   <Ionicons
                     name="close"
@@ -660,6 +737,10 @@ export default function JadwalScreen() {
   );
 }
 
+// =====================================================
+// STYLES
+// =====================================================
+
 const GUTTER = spacing.md + spacing.xs;
 
 const styles = StyleSheet.create({
@@ -667,16 +748,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
   },
+
   content: {
     paddingHorizontal: GUTTER,
     paddingTop: spacing.md,
     paddingBottom: spacing.xl,
   },
+
+  // PILIH HARI
   dayTabs: {
     flexDirection: 'row',
     gap: spacing.xs,
     paddingBottom: spacing.lg,
   },
+
   dayTab: {
     minWidth: 53,
     borderRadius: radius.md,
@@ -687,56 +772,70 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+
   dayTabSelected: {
     backgroundColor: colors.primarySoft,
     borderColor: colors.primary,
   },
+
   dayTabToday: {
     borderColor: colors.primary,
   },
+
   dayTabText: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.semibold,
   },
+
   dayTabTextSelected: {
     color: colors.primary,
     fontWeight: fontWeight.bold,
   },
+
+  // HEADING
   heading: {
     marginBottom: spacing.sm,
   },
+
   headingTitle: {
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: fontWeight.bold,
   },
+
   dateText: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     marginTop: spacing.xs,
   },
+
   summaryRow: {
     alignItems: 'flex-start',
     marginBottom: spacing.md,
   },
+
   summaryPill: {
     backgroundColor: colors.cardAlt,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.full,
+    borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
+
   summaryText: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.semibold,
   },
+
+  // LOADING DAN KOSONG
   loading: {
     paddingVertical: spacing.xl,
     alignItems: 'center',
   },
+
   emptyCard: {
     alignItems: 'center',
     backgroundColor: colors.card,
@@ -746,12 +845,14 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     marginTop: spacing.md,
   },
+
   emptyTitle: {
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: fontWeight.bold,
     marginTop: spacing.md,
   },
+
   emptyText: {
     color: colors.textMuted,
     fontSize: fontSize.sm,
@@ -759,9 +860,12 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     marginTop: spacing.sm,
   },
+
+  // KARTU JADWAL
   scheduleList: {
     gap: spacing.md,
   },
+
   scheduleCard: {
     flexDirection: 'row',
     backgroundColor: colors.card,
@@ -770,17 +874,21 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     overflow: 'hidden',
   },
+
   statusBar: {
     width: 3,
     backgroundColor: colors.border,
   },
+
   statusBarLive: {
-    backgroundColor: colors.success || colors.primary,
+    backgroundColor: colors.success,
   },
+
   cardBody: {
     flex: 1,
     padding: spacing.md,
   },
+
   scheduleTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -788,79 +896,96 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
+
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    borderRadius: radius.full,
+    borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
     backgroundColor: colors.cardAlt,
     flexShrink: 1,
   },
+
   statusLive: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.successSoft,
   },
+
   statusUpcoming: {
     backgroundColor: colors.cardAlt,
   },
+
   statusDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: colors.textMuted,
   },
+
   statusDotLive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.success,
   },
+
   statusText: {
     color: colors.text,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.medium,
   },
+
   timeBox: {
     alignItems: 'flex-end',
     flexShrink: 0,
   },
+
   timeText: {
     color: colors.text,
     fontSize: fontSize.sm,
     fontWeight: fontWeight.bold,
   },
+
   durationText: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     marginTop: 3,
   },
+
   subject: {
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: fontWeight.bold,
   },
+
   classMeta: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     marginTop: spacing.xs,
   },
+
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     marginTop: spacing.sm,
   },
+
   locationText: {
     color: colors.textMuted,
     fontSize: fontSize.sm,
     flex: 1,
   },
+
   cardDivider: {
     height: 1,
     backgroundColor: colors.border,
     marginVertical: spacing.md,
   },
+
   cardActions: {
     flexDirection: 'row',
   },
+
+  // RINGKASAN HARI INI
   daySummary: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -869,64 +994,78 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginTop: spacing.xl,
   },
+
   summaryHeading: {
     color: colors.text,
     fontSize: fontSize.md,
     fontWeight: fontWeight.bold,
     marginBottom: spacing.md,
   },
+
   summaryStats: {
     flexDirection: 'row',
   },
+
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
+
   statNumber: {
     color: colors.primary,
     fontSize: fontSize.xl,
     fontWeight: fontWeight.heavy,
   },
+
   statLabel: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     marginTop: spacing.xs,
     textAlign: 'center',
   },
+
+  // MODAL EDIT
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
+
   modalSafe: {
     maxHeight: '92%',
     backgroundColor: colors.bg,
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,
   },
+
   modalContent: {
     padding: GUTTER,
     paddingBottom: spacing.xl,
   },
+
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
+
   modalHeaderText: {
     flex: 1,
   },
+
   modalTitle: {
     color: colors.text,
     fontSize: fontSize.xl,
     fontWeight: fontWeight.bold,
   },
+
   modalSubtitle: {
     color: colors.textMuted,
     fontSize: fontSize.sm,
     marginTop: spacing.xs,
   },
+
   closeButton: {
     width: 40,
     height: 40,
@@ -935,18 +1074,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   label: {
     color: colors.textMuted,
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,
     marginBottom: spacing.sm,
   },
+
   dayGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
     marginBottom: spacing.lg,
   },
+
   editDayButton: {
     paddingVertical: 9,
     paddingHorizontal: 12,
@@ -955,25 +1097,31 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.card,
   },
+
   editDaySelected: {
     backgroundColor: colors.primarySoft,
     borderColor: colors.primary,
   },
+
   editDayText: {
     color: colors.textMuted,
     fontSize: fontSize.sm,
   },
+
   editDayTextSelected: {
     color: colors.primary,
     fontWeight: fontWeight.bold,
   },
+
   timeRow: {
     flexDirection: 'row',
     gap: spacing.md,
   },
+
   timeField: {
     flex: 1,
   },
+
   modalCancel: {
     marginTop: spacing.sm,
   },
