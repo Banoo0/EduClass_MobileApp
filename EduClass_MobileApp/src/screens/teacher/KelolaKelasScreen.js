@@ -7,6 +7,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -16,10 +17,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 
+import DashboardHeader from '../../components/DashboardHeader';
 import AppButton from '../../components/AppButton';
 import AppInput from '../../components/AppInput';
-import Chip from '../../components/Chip';
-import EmptyState from '../../components/EmptyState';
 import FormAlert from '../../components/FormAlert';
 
 import { useAuth } from '../../context/AuthContext';
@@ -52,7 +52,19 @@ const DAYS = [
   'Minggu',
 ];
 
+const DAY_ORDER = Object.fromEntries(
+  DAYS.map((day, index) => [day, index])
+);
+
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const BLUE = '#4B8DFF';
+const BLUE_SOFT = 'rgba(75,141,255,0.18)';
+const GREEN = '#36D6A0';
+const GREEN_SOFT = 'rgba(54,214,160,0.16)';
+const ORANGE = '#FFB65C';
+const ORANGE_SOFT = 'rgba(255,182,92,0.16)';
+const RED = '#A40000';
 
 function notify(title, message) {
   if (Platform.OS === 'web') {
@@ -84,64 +96,274 @@ function formatTime(value) {
   return value ? String(value).slice(0, 5) : '--:--';
 }
 
-const defaultSchedule = {
-  hari: 'Senin',
-  jamMulai: '07:00',
-  jamSelesai: '08:30',
-  ruang: '',
-  gedung: '',
-};
+function getSubjectIcon(subject = '') {
+  const name = subject.toLowerCase();
 
-export default function KelolaKelasScreen() {
+  if (
+    name.includes('matematika') ||
+    name.includes('aljabar')
+  ) {
+    return 'calculator-outline';
+  }
+
+  if (
+    name.includes('kimia') ||
+    name.includes('fisika') ||
+    name.includes('ipa')
+  ) {
+    return 'flask-outline';
+  }
+
+  if (
+    name.includes('sejarah') ||
+    name.includes('geografi') ||
+    name.includes('ips')
+  ) {
+    return 'earth-outline';
+  }
+
+  if (
+    name.includes('bahasa') ||
+    name.includes('sastra')
+  ) {
+    return 'book-outline';
+  }
+
+  if (name.includes('informatika')) {
+    return 'code-slash-outline';
+  }
+
+  return 'school-outline';
+}
+
+// Semester dan tahun hanya dipakai untuk pengelompokan tampilan.
+// Tidak mengubah kelas atau status token di database.
+function getCurrentAcademicTerm(date = new Date()) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  const academicStartYear = month >= 6 ? year : year - 1;
+  const semester = month >= 6 && month <= 11
+    ? 'Ganjil'
+    : 'Genap';
+
+  return {
+    year: `${academicStartYear}/${academicStartYear + 1}`,
+    semester,
+    key: academicStartYear * 2 +
+      (semester === 'Genap' ? 1 : 0),
+  };
+}
+
+function getClassTermKey(item) {
+  const yearText = String(item.tahun_ajaran || '');
+  const semesterText = String(item.semester || '').toLowerCase();
+
+  const yearMatch = yearText.match(/(20\d{2})/);
+
+  if (!yearMatch) return null;
+
+  const startYear = Number(yearMatch[1]);
+
+  let semesterNumber;
+
+  if (
+    semesterText.includes('ganjil') ||
+    semesterText === '1'
+  ) {
+    semesterNumber = 0;
+  } else if (
+    semesterText.includes('genap') ||
+    semesterText === '2'
+  ) {
+    semesterNumber = 1;
+  } else {
+    return null;
+  }
+
+  return startYear * 2 + semesterNumber;
+}
+
+function sortSchedules(schedules = []) {
+  return [...schedules].sort((a, b) => {
+    const dayDifference =
+      (DAY_ORDER[a.hari] ?? 99) -
+      (DAY_ORDER[b.hari] ?? 99);
+
+    if (dayDifference !== 0) return dayDifference;
+
+    return String(a.jam_mulai || '').localeCompare(
+      String(b.jam_mulai || '')
+    );
+  });
+}
+
+function getPrimarySchedule(item) {
+  return sortSchedules(item.schedules || [])[0] || null;
+}
+
+function getScheduleDescription(schedule) {
+  if (!schedule) return 'Jadwal belum diatur';
+
+  return `${schedule.hari}, ${formatTime(schedule.jam_mulai)} – ${formatTime(schedule.jam_selesai)}`;
+}
+
+function getLocation(schedule) {
+  if (!schedule) return 'Belum ada lokasi';
+
+  return [
+    schedule.ruang,
+    schedule.gedung,
+  ].filter(Boolean).join(' • ') || 'Lokasi belum diatur';
+}
+
+function StatCard({ title, value, caption, icon, tone }) {
+  const toneStyles = {
+    blue: {
+      color: BLUE,
+      backgroundColor: BLUE_SOFT,
+    },
+    green: {
+      color: GREEN,
+      backgroundColor: GREEN_SOFT,
+    },
+    orange: {
+      color: ORANGE,
+      backgroundColor: ORANGE_SOFT,
+    },
+  };
+
+  const toneStyle = toneStyles[tone] || toneStyles.blue;
+
+  return (
+    <View style={styles.statCard}>
+      <View style={styles.statHeader}>
+        <Text style={styles.statLabel}>{title}</Text>
+
+        <View
+          style={[
+            styles.statIcon,
+            { backgroundColor: toneStyle.backgroundColor },
+          ]}
+        >
+          <Ionicons
+            name={icon}
+            size={18}
+            color={toneStyle.color}
+          />
+        </View>
+      </View>
+
+      <Text
+        style={[
+          styles.statNumber,
+          { color: toneStyle.color },
+        ]}
+      >
+        {value}
+      </Text>
+
+      <Text style={styles.statCaption}>{caption}</Text>
+    </View>
+  );
+}
+
+function DayPicker({ value, onChange }) {
+  return (
+    <View style={styles.dayGrid}>
+      {DAYS.map((day) => {
+        const selected = value === day;
+
+        return (
+          <Pressable
+            key={day}
+            onPress={() => onChange(day)}
+            style={[
+              styles.dayButton,
+              selected && styles.dayButtonSelected,
+            ]}
+          >
+            <Text
+              style={[
+                styles.dayButtonText,
+                selected && styles.dayButtonTextSelected,
+              ]}
+            >
+              {day}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+export default function KelolaKelasScreen({ navigation }) {
   const { user, profile } = useAuth();
   const teacherId = user?.id || profile?.id;
 
+  const academicTerm = getCurrentAcademicTerm();
+
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [busyClassId, setBusyClassId] = useState(null);
   const [busyScheduleId, setBusyScheduleId] = useState(null);
-  const [error, setError] = useState('');
+
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [expandedClassId, setExpandedClassId] = useState(null);
 
   // Form kelas baru.
   const [namaMapel, setNamaMapel] = useState('');
   const [rombel, setRombel] = useState('');
-  const [tahunAjaran, setTahunAjaran] = useState('');
-  const [semester, setSemester] = useState('');
+  const [tahunAjaran, setTahunAjaran] = useState(academicTerm.year);
+  const [semester, setSemester] = useState(academicTerm.semester);
+
   const [hari, setHari] = useState('Senin');
   const [jamMulai, setJamMulai] = useState('07:00');
   const [jamSelesai, setJamSelesai] = useState('08:30');
   const [ruang, setRuang] = useState('');
   const [gedung, setGedung] = useState('');
 
-  // Form edit kelas/jadwal langsung di halaman ini.
+  // Form edit kelas dan jadwal.
   const [editingClassId, setEditingClassId] = useState(null);
   const [editingScheduleId, setEditingScheduleId] = useState(null);
   const [editError, setEditError] = useState('');
+
   const [editNamaMapel, setEditNamaMapel] = useState('');
   const [editRombel, setEditRombel] = useState('');
   const [editTahunAjaran, setEditTahunAjaran] = useState('');
   const [editSemester, setEditSemester] = useState('');
+
   const [editHari, setEditHari] = useState('Senin');
   const [editJamMulai, setEditJamMulai] = useState('07:00');
   const [editJamSelesai, setEditJamSelesai] = useState('08:30');
   const [editRuang, setEditRuang] = useState('');
   const [editGedung, setEditGedung] = useState('');
 
-  // =====================================================
-  // MEMUAT KELAS DAN JADWAL
-  // =====================================================
+  // ===================================================
+  // MEMUAT KELAS
+  // ===================================================
 
-  const loadClasses = useCallback(async () => {
+  const loadClasses = useCallback(async (isRefresh = false) => {
     if (!teacherId) {
       setClasses([]);
       setError('Akun guru tidak ditemukan. Silakan login ulang.');
       setLoading(false);
+      setRefreshing(false);
       return;
     }
 
-    setLoading(true);
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
     setError('');
 
     try {
@@ -153,11 +375,17 @@ export default function KelolaKelasScreen() {
         return;
       }
 
-      setClasses(data || []);
+      const normalized = (data || []).map((item) => ({
+        ...item,
+        schedules: sortSchedules(item.schedules || []),
+      }));
+
+      setClasses(normalized);
     } catch (err) {
       setError(err.message || 'Gagal memuat kelas.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [teacherId]);
 
@@ -167,15 +395,43 @@ export default function KelolaKelasScreen() {
     }, [loadClasses])
   );
 
-  // =====================================================
-  // RESET FORM KELAS BARU
-  // =====================================================
+  // ===================================================
+  // KELOMPOK KELAS AKTIF DAN ARSIP
+  // ===================================================
+
+  const currentClasses = classes.filter((item) => {
+    const key = getClassTermKey(item);
+
+    return key === null || key >= academicTerm.key;
+  });
+
+  const archivedClasses = classes.filter((item) => {
+    const key = getClassTermKey(item);
+
+    return key !== null && key < academicTerm.key;
+  });
+
+  const activeCount = currentClasses.filter(
+    (item) => item.aktif
+  ).length;
+
+  const totalStudents = currentClasses.reduce(
+    (total, item) => total + Number(item.jumlah_siswa || 0),
+    0
+  );
+
+  // Belum dihitung karena service tugas di source saat ini belum tersedia.
+  const totalTasks = '—';
+
+  // ===================================================
+  // RESET FORM
+  // ===================================================
 
   const resetCreateForm = () => {
     setNamaMapel('');
     setRombel('');
-    setTahunAjaran('');
-    setSemester('');
+    setTahunAjaran(academicTerm.year);
+    setSemester(academicTerm.semester);
     setHari('Senin');
     setJamMulai('07:00');
     setJamSelesai('08:30');
@@ -183,9 +439,9 @@ export default function KelolaKelasScreen() {
     setGedung('');
   };
 
-  // =====================================================
-  // MEMBUAT KELAS DAN JADWAL PERTAMA
-  // =====================================================
+  // ===================================================
+  // BUAT KELAS DAN JADWAL
+  // ===================================================
 
   const handleCreateClass = async () => {
     if (!namaMapel.trim()) {
@@ -193,10 +449,12 @@ export default function KelolaKelasScreen() {
       return;
     }
 
-    if (!TIME_PATTERN.test(jamMulai) ||
-        !TIME_PATTERN.test(jamSelesai) ||
-        jamSelesai <= jamMulai) {
-      setError('Periksa format serta urutan jam pelajaran.');
+    if (
+      !TIME_PATTERN.test(jamMulai) ||
+      !TIME_PATTERN.test(jamSelesai) ||
+      jamSelesai <= jamMulai
+    ) {
+      setError('Periksa format dan urutan jam pelajaran.');
       return;
     }
 
@@ -228,19 +486,22 @@ export default function KelolaKelasScreen() {
       }
 
       resetCreateForm();
-      await loadClasses();
+      setShowCreateForm(false);
+
+      await loadClasses(true);
 
       if (result.scheduleError) {
         notify(
           'Kelas berhasil dibuat',
-          `Token: ${result.data.token}\n\n` +
-          `Jadwal gagal disimpan: ${result.scheduleError.message}\n\n` +
-          'Buka bagian Kelola Kelas pada kartu untuk melengkapi jadwal.'
+          `Token: ${result.data?.token || 'Tidak tersedia'}\n\n` +
+          `Jadwal belum tersimpan: ${result.scheduleError.message}\n\n` +
+          'Buka kartu kelas untuk melengkapi jadwal.'
         );
       } else {
         notify(
           'Kelas berhasil dibuat',
-          `Token: ${result.data.token}\n\nJadwal kelas juga tersimpan.`
+          `Token kelas: ${result.data?.token || 'Tidak tersedia'}\n\n` +
+          'Kelas beserta jadwal pertamanya berhasil disimpan.'
         );
       }
     } catch (err) {
@@ -250,46 +511,76 @@ export default function KelolaKelasScreen() {
     }
   };
 
-  // =====================================================
+  // ===================================================
   // SALIN TOKEN
-  // =====================================================
+  // ===================================================
 
   const handleCopyToken = async (token) => {
     if (!token) {
-      notify('Gagal menyalin', 'Token kelas tidak tersedia.');
+      notify('Token tidak tersedia', 'Token kelas tidak ditemukan.');
       return;
     }
 
     try {
       await Clipboard.setStringAsync(String(token));
-      notify('Token berhasil disalin', `Token: ${token}`);
+      notify('Token disalin', `Token kelas: ${token}`);
     } catch (err) {
-      if (
-        Platform.OS === 'web' &&
-        typeof navigator !== 'undefined' &&
-        navigator.clipboard?.writeText
-      ) {
-        try {
-          await navigator.clipboard.writeText(String(token));
-          notify('Token berhasil disalin', `Token: ${token}`);
-          return;
-        } catch (_) {
-          // Lanjutkan ke pesan gagal.
-        }
-      }
-
       notify('Gagal menyalin token', 'Silakan coba kembali.');
     }
   };
 
-  // =====================================================
-  // BUKA FORM EDIT KELAS/JADWAL
-  // schedule = null berarti menambahkan jadwal baru.
-  // =====================================================
+  // ===================================================
+  // BAGIKAN KELAS
+  // ===================================================
+
+  const handleShare = async (item) => {
+    const message =
+      `Yuk bergabung ke kelas ${item.nama_mapel}` +
+      `${item.rombel ? ` ${item.rombel}` : ''} di EduClass.\n` +
+      `Token kelas: ${item.token || '-'}`;
+
+    try {
+      if (
+        Platform.OS === 'web' &&
+        typeof navigator !== 'undefined' &&
+        navigator.share
+      ) {
+        await navigator.share({
+          title: 'Bagikan Kelas EduClass',
+          text: message,
+        });
+        return;
+      }
+
+      if (Platform.OS !== 'web') {
+        await Share.share({ message });
+        return;
+      }
+
+      await Clipboard.setStringAsync(message);
+      notify(
+        'Informasi kelas disalin',
+        'Tempelkan informasi ini di tempat kamu ingin membagikannya.'
+      );
+    } catch (err) {
+      if (err?.name !== 'AbortError') {
+        notify(
+          'Tidak dapat membagikan',
+          'Silakan gunakan tombol Salin Token.'
+        );
+      }
+    }
+  };
+
+  // ===================================================
+  // EDIT KELAS ATAU JADWAL DI DALAM HALAMAN INI
+  // ===================================================
 
   const startEditing = (item, schedule = null) => {
     setError('');
     setEditError('');
+
+    setExpandedClassId(item.id);
     setEditingClassId(item.id);
     setEditingScheduleId(schedule?.id || null);
 
@@ -298,16 +589,16 @@ export default function KelolaKelasScreen() {
     setEditTahunAjaran(item.tahun_ajaran || '');
     setEditSemester(item.semester || '');
 
-    setEditHari(schedule?.hari || defaultSchedule.hari);
+    setEditHari(schedule?.hari || 'Senin');
     setEditJamMulai(
       schedule?.jam_mulai
         ? formatTime(schedule.jam_mulai)
-        : defaultSchedule.jamMulai
+        : '07:00'
     );
     setEditJamSelesai(
       schedule?.jam_selesai
         ? formatTime(schedule.jam_selesai)
-        : defaultSchedule.jamSelesai
+        : '08:30'
     );
     setEditRuang(schedule?.ruang || '');
     setEditGedung(schedule?.gedung || '');
@@ -319,10 +610,9 @@ export default function KelolaKelasScreen() {
     setEditError('');
   };
 
-  // =====================================================
-  // SIMPAN INFORMASI KELAS DAN JADWAL
-  // Kedua operasi menggunakan tabel yang sudah ada.
-  // =====================================================
+  // ===================================================
+  // SIMPAN EDIT KELAS DAN JADWAL
+  // ===================================================
 
   const handleSaveEdit = async () => {
     if (!editNamaMapel.trim()) {
@@ -335,7 +625,7 @@ export default function KelolaKelasScreen() {
       !TIME_PATTERN.test(editJamSelesai) ||
       editJamSelesai <= editJamMulai
     ) {
-      setEditError('Periksa format serta urutan jam pelajaran.');
+      setEditError('Periksa format dan urutan jam pelajaran.');
       return;
     }
 
@@ -371,7 +661,7 @@ export default function KelolaKelasScreen() {
         gedung: editGedung,
       });
 
-      await loadClasses();
+      await loadClasses(true);
 
       if (scheduleResult.error) {
         setEditError(
@@ -382,7 +672,7 @@ export default function KelolaKelasScreen() {
       }
 
       cancelEditing();
-      notify('Berhasil', 'Informasi kelas dan jadwal telah disimpan.');
+      notify('Perubahan tersimpan', 'Informasi kelas dan jadwal berhasil diperbarui.');
     } catch (err) {
       setEditError(err.message || 'Gagal menyimpan perubahan.');
     } finally {
@@ -390,9 +680,9 @@ export default function KelolaKelasScreen() {
     }
   };
 
-  // =====================================================
-  // HAPUS SATU JADWAL TANPA HAPUS KELAS
-  // =====================================================
+  // ===================================================
+  // HAPUS SATU JADWAL
+  // ===================================================
 
   const performDeleteSchedule = async (item, schedule) => {
     setBusyScheduleId(schedule.id);
@@ -417,7 +707,7 @@ export default function KelolaKelasScreen() {
         cancelEditing();
       }
 
-      await loadClasses();
+      await loadClasses(true);
       notify('Jadwal dihapus', 'Jadwal berhasil dihapus.');
     } catch (err) {
       setError(err.message || 'Gagal menghapus jadwal.');
@@ -429,16 +719,15 @@ export default function KelolaKelasScreen() {
   const handleDeleteSchedule = (item, schedule) => {
     confirmAction(
       'Hapus Jadwal?',
-      `Hapus jadwal ${schedule.hari}, ` +
-      `${formatTime(schedule.jam_mulai)}–${formatTime(schedule.jam_selesai)}? ` +
+      `Hapus jadwal ${getScheduleDescription(schedule)}?\n` +
       'Kelas dan anggota kelas tidak akan dihapus.',
       () => performDeleteSchedule(item, schedule)
     );
   };
 
-  // =====================================================
-  // HAPUS KELAS BESERTA DATA TERKAIT
-  // =====================================================
+  // ===================================================
+  // HAPUS KELAS
+  // ===================================================
 
   const performDeleteClass = async (item) => {
     setBusyClassId(item.id);
@@ -459,7 +748,8 @@ export default function KelolaKelasScreen() {
         cancelEditing();
       }
 
-      await loadClasses();
+      setExpandedClassId(null);
+      await loadClasses(true);
       notify('Kelas dihapus', 'Kelas berhasil dihapus.');
     } catch (err) {
       setError(err.message || 'Gagal menghapus kelas.');
@@ -471,16 +761,15 @@ export default function KelolaKelasScreen() {
   const handleDeleteClass = (item) => {
     confirmAction(
       'Hapus Kelas Permanen?',
-      `Kelas "${item.nama_mapel}" akan dihapus. ` +
-      'Jadwal, keanggotaan, pertemuan, dan presensi terkait ' +
-      'dapat ikut terhapus karena relasi database yang sudah ada.',
+      `Kelas "${item.nama_mapel}" akan dihapus.\n\n` +
+      'Jadwal, anggota, pertemuan, dan presensi terkait dapat ikut terhapus.',
       () => performDeleteClass(item)
     );
   };
 
-  // =====================================================
-  // AKTIF/NONAKTIF TOKEN
-  // =====================================================
+  // ===================================================
+  // BUKA / TUTUP TOKEN
+  // ===================================================
 
   const handleToggleActive = async (item) => {
     setBusyClassId(item.id);
@@ -506,19 +795,31 @@ export default function KelolaKelasScreen() {
         )
       );
     } catch (err) {
-      setError(err.message || 'Gagal mengubah status kelas.');
+      setError(err.message || 'Gagal mengubah status token.');
     } finally {
       setBusyClassId(null);
     }
   };
 
-  // =====================================================
-  // FORM EDIT, DIPAKAI DI DALAM KARTU KELAS
-  // =====================================================
+  // ===================================================
+  // FORM EDIT INLINE
+  // ===================================================
 
   const renderEditForm = (item) => (
     <View style={styles.editForm}>
-      <Text style={styles.sectionTitle}>Edit Kelas</Text>
+      <View style={styles.inlineSectionHeading}>
+        <Text style={styles.inlineSectionTitle}>
+          Edit Informasi Kelas
+        </Text>
+
+        <Pressable onPress={cancelEditing} hitSlop={10}>
+          <Ionicons
+            name="close-circle-outline"
+            size={23}
+            color={colors.textMuted}
+          />
+        </Pressable>
+      </View>
 
       <AppInput
         label="Nama Mata Pelajaran"
@@ -547,37 +848,13 @@ export default function KelolaKelasScreen() {
 
       <View style={styles.divider} />
 
-      <Text style={styles.sectionTitle}>
+      <Text style={styles.inlineSectionTitle}>
         {editingScheduleId ? 'Edit Jadwal' : 'Tambah Jadwal'}
       </Text>
 
-      <Text style={styles.label}>Hari Pelajaran</Text>
+      <Text style={styles.fieldLabel}>Hari Pelajaran</Text>
 
-      <View style={styles.dayGrid}>
-        {DAYS.map((day) => {
-          const selected = editHari === day;
-
-          return (
-            <Pressable
-              key={day}
-              onPress={() => setEditHari(day)}
-              style={[
-                styles.dayButton,
-                selected && styles.daySelected,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.dayText,
-                  selected && styles.dayTextSelected,
-                ]}
-              >
-                {day}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <DayPicker value={editHari} onChange={setEditHari} />
 
       <View style={styles.timeRow}>
         <View style={styles.timeField}>
@@ -589,6 +866,7 @@ export default function KelolaKelasScreen() {
             placeholder="07:00"
           />
         </View>
+
         <View style={styles.timeField}>
           <AppInput
             label="Jam Selesai"
@@ -624,353 +902,641 @@ export default function KelolaKelasScreen() {
         onPress={handleSaveEdit}
       />
 
-      <View style={styles.secondaryButton}>
+      <View style={styles.formSecondaryButton}>
         <AppButton
           title="Batal"
           variant="outline"
-          onPress={cancelEditing}
           disabled={savingEdit}
+          onPress={cancelEditing}
         />
       </View>
     </View>
   );
 
-  // =====================================================
+  // ===================================================
+  // KARTU KELAS
+  // ===================================================
+
+  const renderClassCard = (item, archived = false) => {
+    const schedules = sortSchedules(item.schedules || []);
+    const mainSchedule = getPrimarySchedule(item);
+    const expanded = expandedClassId === item.id;
+    const editing = editingClassId === item.id;
+
+    return (
+      <View
+        key={item.id}
+        style={[
+          styles.classCard,
+          archived && styles.archivedCard,
+        ]}
+      >
+        {/* HEADER KARTU */}
+        <View style={styles.classHeader}>
+          <View
+            style={[
+              styles.subjectIcon,
+              item.nama_mapel?.toLowerCase().includes('matematika')
+                ? styles.mathIcon
+                : item.nama_mapel?.toLowerCase().includes('sejarah')
+                  ? styles.historyIcon
+                  : styles.defaultSubjectIcon,
+            ]}
+          >
+            <Ionicons
+              name={getSubjectIcon(item.nama_mapel)}
+              size={27}
+              color={
+                item.nama_mapel?.toLowerCase().includes('matematika')
+                  ? '#A7C5FF'
+                  : item.nama_mapel?.toLowerCase().includes('sejarah')
+                    ? ORANGE
+                    : '#A7C5FF'
+              }
+            />
+          </View>
+
+          <View style={styles.classMainInfo}>
+            <Text style={styles.className} numberOfLines={2}>
+              {`${item.nama_mapel || 'Mata Pelajaran'}${item.rombel ? ` ${item.rombel}` : ''}`}
+            </Text>
+
+            <View style={styles.primarySchedule}>
+              <Ionicons
+                name="time-outline"
+                size={19}
+                color={colors.textMuted}
+              />
+
+              <Text style={styles.primaryScheduleText}>
+                {mainSchedule
+                  ? getScheduleDescription(mainSchedule)
+                  : 'Jadwal belum diatur'}
+              </Text>
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.activeBadge,
+              !item.aktif && styles.inactiveBadge,
+            ]}
+          >
+            <View
+              style={[
+                styles.activeDot,
+                !item.aktif && styles.inactiveDot,
+              ]}
+            />
+
+            <Text
+              style={[
+                styles.activeText,
+                !item.aktif && styles.inactiveText,
+              ]}
+            >
+              {item.aktif ? 'AKTIF' : 'NONAKTIF'}
+            </Text>
+          </View>
+        </View>
+
+        {/* STATISTIK KARTU */}
+        <View style={styles.classMetrics}>
+          <View style={styles.metricItem}>
+            <Ionicons
+              name="person-outline"
+              size={17}
+              color={colors.textMuted}
+            />
+
+            <Text style={styles.metricLabel}>Siswa</Text>
+
+            <Text style={styles.metricValue}>
+              {Number(item.jumlah_siswa || 0)}
+            </Text>
+          </View>
+
+          <View style={styles.metricItem}>
+            <Ionicons
+              name="checkmark-circle-outline"
+              size={17}
+              color={colors.textMuted}
+            />
+
+            <Text style={styles.metricLabel}>Tugas Aktif</Text>
+
+            <Text style={[styles.metricValue, styles.taskValue]}>
+              —
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={() => handleCopyToken(item.token)}
+            style={styles.tokenMetric}
+            accessibilityRole="button"
+          >
+            <Ionicons
+              name="key-outline"
+              size={17}
+              color={colors.guru}
+            />
+
+            <Text style={styles.metricLabel}>Token</Text>
+
+            <View style={styles.tokenValueRow}>
+              <Text style={styles.tokenMetricValue} numberOfLines={1}>
+                {item.token || 'Belum tersedia'}
+              </Text>
+
+              <Ionicons
+                name="copy-outline"
+                size={16}
+                color={colors.guru}
+              />
+            </View>
+          </Pressable>
+        </View>
+
+        {/* TOMBOL */}
+        <View style={styles.cardActions}>
+          <Pressable
+            onPress={() =>
+              setExpandedClassId(expanded ? null : item.id)
+            }
+            style={({ pressed }) => [
+              styles.viewClassButton,
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Text style={styles.viewClassText}>
+              {expanded ? 'Tutup Detail' : 'Lihat Kelas'}
+            </Text>
+
+            <Ionicons
+              name={expanded ? 'chevron-up' : 'arrow-forward'}
+              size={20}
+              color="#0D315F"
+            />
+          </Pressable>
+
+          <Pressable
+            onPress={() => handleShare(item)}
+            style={({ pressed }) => [
+              styles.shareButton,
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Ionicons
+              name="share-social-outline"
+              size={19}
+              color={colors.textMuted}
+            />
+
+            <Text style={styles.shareText}>Bagikan</Text>
+          </Pressable>
+        </View>
+
+        {/* DETAIL KELAS */}
+        {expanded ? (
+          <View style={styles.expandedDetails}>
+            <Text style={styles.detailHeading}>
+              Informasi Kelas
+            </Text>
+
+            <DetailRow
+              label="Tahun Ajaran"
+              value={item.tahun_ajaran || 'Belum diatur'}
+            />
+
+            <DetailRow
+              label="Semester"
+              value={item.semester || 'Belum diatur'}
+            />
+
+            <DetailRow
+              label="Jumlah Jadwal"
+              value={`${schedules.length} sesi`}
+            />
+
+            <View style={styles.divider} />
+
+            <View style={styles.inlineSectionHeading}>
+              <Text style={styles.detailHeading}>
+                Jadwal Pelajaran
+              </Text>
+
+              <Pressable
+                onPress={() => startEditing(item, null)}
+                style={styles.addScheduleButton}
+              >
+                <Ionicons
+                  name="add-circle-outline"
+                  size={18}
+                  color={colors.primary}
+                />
+
+                <Text style={styles.addScheduleText}>Tambah</Text>
+              </Pressable>
+            </View>
+
+            {schedules.length === 0 ? (
+              <Text style={styles.emptyScheduleText}>
+                Belum ada jadwal. Tekan Tambah untuk membuat jadwal pertama.
+              </Text>
+            ) : (
+              schedules.map((schedule) => (
+                <View key={schedule.id} style={styles.scheduleRow}>
+                  <View style={styles.scheduleRowIcon}>
+                    <Ionicons
+                      name="calendar-outline"
+                      size={19}
+                      color={colors.primary}
+                    />
+                  </View>
+
+                  <View style={styles.scheduleRowText}>
+                    <Text style={styles.scheduleRowTitle}>
+                      {schedule.hari}
+                    </Text>
+
+                    <Text style={styles.scheduleRowTime}>
+                      {formatTime(schedule.jam_mulai)} – {formatTime(schedule.jam_selesai)}
+                    </Text>
+
+                    <Text style={styles.scheduleRowLocation}>
+                      {getLocation(schedule)}
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    onPress={() => startEditing(item, schedule)}
+                    style={styles.scheduleAction}
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit jadwal"
+                  >
+                    <Ionicons
+                      name="create-outline"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => handleDeleteSchedule(item, schedule)}
+                    style={styles.scheduleAction}
+                    accessibilityRole="button"
+                    accessibilityLabel="Hapus jadwal"
+                    disabled={busyScheduleId === schedule.id}
+                  >
+                    {busyScheduleId === schedule.id ? (
+                      <ActivityIndicator size="small" />
+                    ) : (
+                      <Ionicons
+                        name="trash-outline"
+                        size={19}
+                        color={colors.danger}
+                      />
+                    )}
+                  </Pressable>
+                </View>
+              ))
+            )}
+
+            {editing ? (
+              renderEditForm(item)
+            ) : (
+              <View style={styles.manageActions}>
+                <AppButton
+                  title="Edit Kelas & Jadwal"
+                  icon="create-outline"
+                  onPress={() => startEditing(item, schedules[0] || null)}
+                />
+
+                <View style={styles.formSecondaryButton}>
+                  <AppButton
+                    title={item.aktif ? 'Tutup Pendaftaran' : 'Buka Pendaftaran'}
+                    icon={
+                      item.aktif
+                        ? 'lock-closed-outline'
+                        : 'lock-open-outline'
+                    }
+                    variant="outline"
+                    loading={busyClassId === item.id}
+                    disabled={busyClassId !== null}
+                    onPress={() => handleToggleActive(item)}
+                  />
+                </View>
+
+                <View style={styles.formSecondaryButton}>
+                  <AppButton
+                    title="Hapus Kelas"
+                    icon="trash-outline"
+                    variant="danger"
+                    loading={busyClassId === item.id}
+                    disabled={busyClassId !== null}
+                    onPress={() => handleDeleteClass(item)}
+                  />
+                </View>
+              </View>
+            )}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
+  // ===================================================
   // TAMPILAN UTAMA
-  // =====================================================
+  // ===================================================
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <DashboardHeader
+        variant="guru"
+        title="Kelola Kelas"
+        onAvatarPress={() => navigation.navigate('Profil')}
+      />
+
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
-            refreshing={loading}
-            onRefresh={loadClasses}
+            refreshing={refreshing}
+            onRefresh={() => loadClasses(true)}
             tintColor={colors.primary}
+            colors={[colors.primary]}
+            progressBackgroundColor={colors.card}
           />
         }
       >
-        <View style={styles.header}>
-          <View style={styles.headerText}>
-            <Text style={styles.eyebrow}>RUANG BELAJAR</Text>
-            <Text style={styles.title}>Kelola Kelas</Text>
-            <Text style={styles.subtitle}>
-              Kelola kelas dan jadwal pelajaran dalam satu halaman.
+        <FormAlert message={error} />
+
+        {/* JUDUL DAN CTA */}
+        <View style={styles.pageHeading}>
+          <View style={styles.pageHeadingText}>
+            <Text style={styles.pageTitle}>Kelola Kelas</Text>
+
+            <Text style={styles.pageSubtitle}>
+              Daftar kelas yang kamu ampu semester ini.
             </Text>
           </View>
 
-          <View style={styles.headerIcon}>
+          <Pressable
+            onPress={() => {
+              setError('');
+              setShowCreateForm((value) => !value);
+            }}
+            style={({ pressed }) => [
+              styles.createButton,
+              pressed && styles.buttonPressed,
+            ]}
+          >
             <Ionicons
-              name="school-outline"
-              size={28}
-              color={colors.primary}
+              name={showCreateForm ? 'close' : 'add'}
+              size={22}
+              color="#07356F"
             />
-          </View>
+
+            <Text style={styles.createButtonText}>
+              {showCreateForm ? 'Tutup Form' : 'Buat Kelas'}
+            </Text>
+          </Pressable>
         </View>
 
-        <FormAlert message={error} />
+        {/* RINGKASAN */}
+        <View style={styles.statsRow}>
+          <StatCard
+            title="Kelas Aktif"
+            value={activeCount}
+            caption={academicTerm.semester === 'Genap'
+              ? 'Smt. Genap'
+              : 'Smt. Ganjil'}
+            icon="business-outline"
+            tone="blue"
+          />
+
+          <StatCard
+            title="Total Siswa"
+            value={totalStudents}
+            caption={`${currentClasses.length} kelas berjalan`}
+            icon="people-outline"
+            tone="green"
+          />
+
+          <StatCard
+            title="Total Tugas"
+            value={totalTasks}
+            caption="Data belum terhubung"
+            icon="clipboard-outline"
+            tone="orange"
+          />
+        </View>
 
         {/* FORM BUAT KELAS */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Buat Kelas Baru</Text>
+        {showCreateForm ? (
+          <View style={styles.createForm}>
+            <View style={styles.inlineSectionHeading}>
+              <Text style={styles.formHeading}>
+                Buat Kelas Baru
+              </Text>
 
-          <AppInput
-            label="Nama Mata Pelajaran"
-            required
-            placeholder="Contoh: Informatika"
-            value={namaMapel}
-            onChangeText={setNamaMapel}
-          />
+              <Pressable
+                onPress={() => setShowCreateForm(false)}
+                hitSlop={10}
+              >
+                <Ionicons
+                  name="close-circle-outline"
+                  size={23}
+                  color={colors.textMuted}
+                />
+              </Pressable>
+            </View>
 
-          <AppInput
-            label="Rombel"
-            placeholder="Contoh: X-3"
-            value={rombel}
-            onChangeText={setRombel}
-          />
+            <Text style={styles.formDescription}>
+              Masukkan informasi kelas dan jadwal pelajaran pertama.
+              Token akan dibuat otomatis oleh database.
+            </Text>
 
-          <AppInput
-            label="Tahun Ajaran"
-            placeholder="Contoh: 2026/2027"
-            value={tahunAjaran}
-            onChangeText={setTahunAjaran}
-          />
+            <AppInput
+              label="Nama Mata Pelajaran"
+              required
+              placeholder="Contoh: Matematika"
+              value={namaMapel}
+              onChangeText={setNamaMapel}
+            />
 
-          <AppInput
-            label="Semester"
-            placeholder="Contoh: Ganjil"
-            value={semester}
-            onChangeText={setSemester}
-          />
+            <AppInput
+              label="Rombel"
+              placeholder="Contoh: 9A"
+              value={rombel}
+              onChangeText={setRombel}
+            />
 
-          <View style={styles.divider} />
+            <View style={styles.timeRow}>
+              <View style={styles.timeField}>
+                <AppInput
+                  label="Tahun Ajaran"
+                  placeholder="2026/2027"
+                  value={tahunAjaran}
+                  onChangeText={setTahunAjaran}
+                />
+              </View>
 
-          <Text style={styles.sectionTitle}>Jadwal Pertama</Text>
-          <Text style={styles.hint}>
-            Jadwal ini akan langsung terhubung dengan kelas baru.
-          </Text>
+              <View style={styles.timeField}>
+                <AppInput
+                  label="Semester"
+                  placeholder="Ganjil / Genap"
+                  value={semester}
+                  onChangeText={setSemester}
+                />
+              </View>
+            </View>
 
-          <View style={styles.dayGrid}>
-            {DAYS.map((day) => {
-              const selected = hari === day;
+            <View style={styles.divider} />
 
-              return (
-                <Pressable
-                  key={day}
-                  onPress={() => setHari(day)}
-                  style={[
-                    styles.dayButton,
-                    selected && styles.daySelected,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.dayText,
-                      selected && styles.dayTextSelected,
-                    ]}
-                  >
-                    {day}
-                  </Text>
-                </Pressable>
-              );
-            })}
+            <Text style={styles.inlineSectionTitle}>
+              Jadwal Pelajaran Pertama
+            </Text>
+
+            <Text style={styles.fieldLabel}>Hari</Text>
+
+            <DayPicker value={hari} onChange={setHari} />
+
+            <View style={styles.timeRow}>
+              <View style={styles.timeField}>
+                <AppInput
+                  label="Jam Mulai"
+                  required
+                  value={jamMulai}
+                  onChangeText={setJamMulai}
+                  placeholder="07:00"
+                />
+              </View>
+
+              <View style={styles.timeField}>
+                <AppInput
+                  label="Jam Selesai"
+                  required
+                  value={jamSelesai}
+                  onChangeText={setJamSelesai}
+                  placeholder="08:30"
+                />
+              </View>
+            </View>
+
+            <AppInput
+              label="Ruang"
+              placeholder="Contoh: Ruang 201"
+              value={ruang}
+              onChangeText={setRuang}
+            />
+
+            <AppInput
+              label="Gedung"
+              placeholder="Contoh: Gedung A"
+              value={gedung}
+              onChangeText={setGedung}
+            />
+
+            <AppButton
+              title="Simpan Kelas & Jadwal"
+              icon="checkmark-circle-outline"
+              loading={submitting}
+              disabled={
+                submitting ||
+                !namaMapel.trim() ||
+                !TIME_PATTERN.test(jamMulai) ||
+                !TIME_PATTERN.test(jamSelesai) ||
+                jamSelesai <= jamMulai
+              }
+              onPress={handleCreateClass}
+            />
+          </View>
+        ) : null}
+
+        {/* DAFTAR KELAS SEMESTER BERJALAN */}
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionHeaderText}>
+            <Text style={styles.sectionHeading}>
+              Semester {academicTerm.semester} {academicTerm.year}
+            </Text>
+
+            <Text style={styles.sectionCaption}>
+              Kelas yang sedang kamu kelola
+            </Text>
           </View>
 
-          <View style={styles.timeRow}>
-            <View style={styles.timeField}>
-              <AppInput
-                label="Jam Mulai"
-                required
-                value={jamMulai}
-                onChangeText={setJamMulai}
-                placeholder="07:00"
-              />
-            </View>
-            <View style={styles.timeField}>
-              <AppInput
-                label="Jam Selesai"
-                required
-                value={jamSelesai}
-                onChangeText={setJamSelesai}
-                placeholder="08:30"
-              />
-            </View>
+          <View style={styles.runningBadge}>
+            <View style={styles.runningDot} />
+
+            <Text style={styles.runningBadgeText}>
+              {currentClasses.length} Kelas Berjalan
+            </Text>
           </View>
-
-          <AppInput
-            label="Ruang"
-            value={ruang}
-            onChangeText={setRuang}
-            placeholder="Contoh: Lab Komputer"
-          />
-
-          <AppInput
-            label="Gedung"
-            value={gedung}
-            onChangeText={setGedung}
-            placeholder="Contoh: Gedung A"
-          />
-
-          <AppButton
-            title="Buat Kelas & Simpan Jadwal"
-            icon="checkmark-circle-outline"
-            loading={submitting}
-            disabled={submitting || !namaMapel.trim()}
-            onPress={handleCreateClass}
-          />
-        </View>
-
-        {/* DAFTAR KELAS */}
-        <View style={styles.listHeading}>
-          <Text style={styles.sectionTitle}>Kelas Saya</Text>
-          <Text style={styles.hint}>{classes.length} kelas</Text>
         </View>
 
         {loading ? (
-          <ActivityIndicator size="large" color={colors.primary} />
-        ) : classes.length === 0 ? (
-          <EmptyState
-            icon="school-outline"
-            text="Belum ada kelas. Buat kelas pertama kamu di atas."
-          />
+          <View style={styles.loading}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Memuat daftar kelas...</Text>
+          </View>
+        ) : currentClasses.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons
+              name="school-outline"
+              size={32}
+              color={colors.textMuted}
+            />
+
+            <Text style={styles.emptyTitle}>Belum Ada Kelas</Text>
+
+            <Text style={styles.emptyDescription}>
+              Tekan Buat Kelas untuk menambahkan kelas dan jadwal pertama.
+            </Text>
+          </View>
         ) : (
           <View style={styles.classList}>
-            {classes.map((item) => {
-              const schedules = item.schedules || [];
-              const isEditing = editingClassId === item.id;
+            {currentClasses.map((item) => renderClassCard(item))}
+          </View>
+        )}
 
-              return (
-                <View key={item.id} style={styles.classCard}>
-                  <View style={styles.classHeader}>
-                    <View style={styles.subjectIcon}>
-                      <Ionicons
-                        name="book-outline"
-                        size={23}
-                        color={colors.primary}
-                      />
-                    </View>
+        {/* ARSIP KELAS */}
+        <View style={styles.archiveHeading}>
+          <View style={styles.archiveHeadingText}>
+            <Text style={styles.archiveTitle}>
+              Arsip Kelas Terdahulu
+            </Text>
 
-                    <View style={styles.classInfo}>
-                      <Text style={styles.subject}>
-                        {item.nama_mapel}
-                      </Text>
-                      <Text style={styles.meta}>
-                        {[
-                          item.rombel,
-                          item.tahun_ajaran,
-                          item.semester,
-                        ].filter(Boolean).join(' • ') || 'Informasi kelas'}
-                      </Text>
-                    </View>
+            <Text style={styles.sectionCaption}>
+              Kelas dari periode ajaran sebelumnya.
+            </Text>
+          </View>
 
-                    <Chip
-                      label={item.aktif ? 'Aktif' : 'Nonaktif'}
-                      tone={item.aktif ? 'success' : 'danger'}
-                    />
-                  </View>
+          <View style={styles.archiveCount}>
+            <Text style={styles.archiveCountText}>
+              {archivedClasses.length} Kelas
+            </Text>
+          </View>
+        </View>
 
-                  <Text style={styles.studentCount}>
-                    {item.jumlah_siswa ?? 0} siswa bergabung
-                  </Text>
+        {archivedClasses.length > 0 ? (
+          <View style={styles.classList}>
+            {archivedClasses.map((item) =>
+              renderClassCard(item, true)
+            )}
+          </View>
+        ) : (
+          <View style={styles.archiveEmpty}>
+            <Ionicons
+              name="archive-outline"
+              size={22}
+              color={colors.textMuted}
+            />
 
-                  {/* DAFTAR JADWAL KELAS */}
-                  <Text style={styles.scheduleHeading}>
-                    Jadwal Pelajaran
-                  </Text>
-
-                  {schedules.length === 0 ? (
-                    <Text style={styles.hint}>
-                      Belum ada jadwal. Gunakan tombol Tambah Jadwal.
-                    </Text>
-                  ) : (
-                    schedules.map((schedule) => (
-                      <View
-                        key={schedule.id}
-                        style={styles.scheduleRow}
-                      >
-                        <View style={styles.scheduleInfo}>
-                          <Text style={styles.scheduleTitle}>
-                            {schedule.hari} · {formatTime(schedule.jam_mulai)}
-                            {' – '}
-                            {formatTime(schedule.jam_selesai)}
-                          </Text>
-                          <Text style={styles.meta}>
-                            {[schedule.ruang, schedule.gedung]
-                              .filter(Boolean)
-                              .join(' • ') || 'Ruang belum diatur'}
-                          </Text>
-                        </View>
-
-                        <Pressable
-                          style={styles.iconButton}
-                          accessibilityRole="button"
-                          accessibilityLabel="Edit jadwal"
-                          onPress={() => startEditing(item, schedule)}
-                        >
-                          <Ionicons
-                            name="create-outline"
-                            size={20}
-                            color={colors.primary}
-                          />
-                        </Pressable>
-
-                        <Pressable
-                          style={styles.iconButton}
-                          accessibilityRole="button"
-                          accessibilityLabel="Hapus jadwal"
-                          onPress={() =>
-                            handleDeleteSchedule(item, schedule)
-                          }
-                          disabled={busyScheduleId === schedule.id}
-                        >
-                          {busyScheduleId === schedule.id ? (
-                            <ActivityIndicator size="small" />
-                          ) : (
-                            <Ionicons
-                              name="trash-outline"
-                              size={19}
-                              color={colors.danger}
-                            />
-                          )}
-                        </Pressable>
-                      </View>
-                    ))
-                  )}
-
-                  {/* TOKEN */}
-                  <View style={styles.tokenBox}>
-                    <Text style={styles.tokenLabel}>TOKEN KELAS</Text>
-                    <Text selectable style={styles.token}>
-                      {item.token}
-                    </Text>
-
-                    <Pressable
-                      onPress={() => handleCopyToken(item.token)}
-                      style={styles.copyButton}
-                      accessibilityRole="button"
-                    >
-                      <Ionicons
-                        name="copy-outline"
-                        size={18}
-                        color={colors.primary}
-                      />
-                      <Text style={styles.copyText}>Salin Token</Text>
-                    </Pressable>
-                  </View>
-
-                  {/* AKSI KELAS */}
-                  <AppButton
-                    title={isEditing ? 'Sedang Mengedit' : 'Edit Kelas'}
-                    icon="create-outline"
-                    variant="outline"
-                    onPress={() =>
-                      startEditing(item, schedules[0] || null)
-                    }
-                    disabled={savingEdit}
-                  />
-
-                  <View style={styles.secondaryButton}>
-                    <AppButton
-                      title="Tambah Jadwal"
-                      icon="add-circle-outline"
-                      variant="outline"
-                      onPress={() => startEditing(item, null)}
-                      disabled={savingEdit}
-                    />
-                  </View>
-
-                  {isEditing ? renderEditForm(item) : null}
-
-                  <View style={styles.secondaryButton}>
-                    <AppButton
-                      title={item.aktif ? 'Tutup Token' : 'Buka Token'}
-                      icon={
-                        item.aktif
-                          ? 'lock-closed-outline'
-                          : 'lock-open-outline'
-                      }
-                      variant="outline"
-                      loading={busyClassId === item.id}
-                      disabled={busyClassId !== null}
-                      onPress={() => handleToggleActive(item)}
-                    />
-                  </View>
-
-                  <View style={styles.deleteButton}>
-                    <AppButton
-                      title="Hapus Kelas"
-                      icon="trash-outline"
-                      variant="danger"
-                      loading={busyClassId === item.id}
-                      disabled={busyClassId !== null || savingEdit}
-                      onPress={() => handleDeleteClass(item)}
-                    />
-                  </View>
-                </View>
-              );
-            })}
+            <Text style={styles.archiveEmptyText}>
+              Belum ada kelas dari periode sebelumnya.
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -978,50 +1544,131 @@ export default function KelolaKelasScreen() {
   );
 }
 
+function DetailRow({ label, value }) {
+  return (
+    <View style={styles.detailRow}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value}</Text>
+    </View>
+  );
+}
+
 const GUTTER = spacing.md + spacing.xs;
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  safe: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+
   content: {
     paddingHorizontal: GUTTER,
-    paddingTop: spacing.md,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.xl,
   },
-  header: {
+
+  // JUDUL DAN TOMBOL BUAT KELAS
+  pageHeading: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+
+  pageHeadingText: {
+    flex: 1,
+  },
+
+  pageTitle: {
+    color: colors.text,
+    fontSize: fontSize.xxl + 4,
+    fontWeight: fontWeight.heavy,
+  },
+
+  pageSubtitle: {
+    color: colors.textMuted,
+    fontSize: fontSize.md,
+    lineHeight: 22,
+    marginTop: spacing.xs,
+  },
+
+  createButton: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: BLUE,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.lg,
+  },
+
+  createButtonText: {
+    color: '#07356F',
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+
+  buttonPressed: {
+    opacity: 0.78,
+  },
+
+  // STATISTIK
+  statsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+
+  statCard: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 135,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.card,
+  },
+
+  statHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
   },
-  headerText: { flex: 1 },
-  eyebrow: {
-    color: colors.primary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
-    letterSpacing: 1.5,
-  },
-  title: {
-    color: colors.text,
-    fontSize: fontSize.xxl,
-    fontWeight: fontWeight.heavy,
-    marginTop: spacing.xs,
-  },
-  subtitle: {
+
+  statLabel: {
+    flex: 1,
     color: colors.textMuted,
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-    marginTop: spacing.xs,
+    fontSize: fontSize.xs,
+    lineHeight: 16,
   },
-  headerIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: radius.md,
-    backgroundColor: colors.primarySoft,
+
+  statIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  card: {
+
+  statNumber: {
+    fontSize: fontSize.display + 4,
+    fontWeight: fontWeight.heavy,
+    lineHeight: 43,
+  },
+
+  statCaption: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    marginTop: spacing.xs,
+    lineHeight: 17,
+  },
+
+  // FORM
+  createForm: {
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1029,169 +1676,557 @@ const styles = StyleSheet.create({
     padding: GUTTER,
     marginBottom: spacing.xl,
   },
-  sectionTitle: {
+
+  formHeading: {
+    flex: 1,
     color: colors.text,
-    fontSize: fontSize.lg,
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.bold,
+  },
+
+  formDescription: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    lineHeight: 21,
+    marginTop: spacing.xs,
+    marginBottom: spacing.lg,
+  },
+
+  inlineSectionHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+
+  inlineSectionTitle: {
+    color: colors.text,
+    fontSize: fontSize.md,
     fontWeight: fontWeight.bold,
     marginBottom: spacing.md,
   },
-  hint: {
-    color: colors.textMuted,
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-    marginBottom: spacing.md,
-  },
+
   divider: {
     height: 1,
     backgroundColor: colors.border,
     marginVertical: spacing.lg,
   },
+
+  fieldLabel: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+    marginBottom: spacing.sm,
+  },
+
   dayGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
     marginBottom: spacing.lg,
   },
+
   dayButton: {
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: radius.md,
+    backgroundColor: colors.cardAlt,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.cardAlt,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 9,
   },
-  daySelected: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
+
+  dayButtonSelected: {
+    backgroundColor: BLUE_SOFT,
+    borderColor: BLUE,
   },
-  dayText: {
+
+  dayButtonText: {
     color: colors.textMuted,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.medium,
   },
-  dayTextSelected: {
-    color: colors.primary,
+
+  dayButtonTextSelected: {
+    color: colors.guru,
     fontWeight: fontWeight.bold,
   },
-  timeRow: { flexDirection: 'row', gap: spacing.md },
-  timeField: { flex: 1 },
-  listHeading: {
+
+  timeRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+
+  timeField: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  formSecondaryButton: {
+    marginTop: spacing.sm,
+  },
+
+  // HEADING DAFTAR KELAS
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: spacing.md,
     marginBottom: spacing.md,
   },
-  classList: { gap: spacing.md },
-  classCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    padding: GUTTER,
-    borderWidth: 1,
-    borderColor: colors.border,
+
+  sectionHeaderText: {
+    flex: 1,
   },
-  classHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  subjectIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  classInfo: { flex: 1 },
-  subject: {
+
+  sectionHeading: {
     color: colors.text,
-    fontSize: fontSize.lg,
+    fontSize: fontSize.xl,
     fontWeight: fontWeight.bold,
   },
-  meta: {
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-    lineHeight: 18,
-    marginTop: spacing.xs,
-  },
-  studentCount: {
+
+  sectionCaption: {
     color: colors.textMuted,
     fontSize: fontSize.sm,
-    marginTop: spacing.md,
+    lineHeight: 20,
+    marginTop: spacing.xs,
   },
-  scheduleHeading: {
-    color: colors.text,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  scheduleRow: {
+
+  runningBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    backgroundColor: colors.cardAlt,
-    borderRadius: radius.md,
-    padding: spacing.sm,
-    marginBottom: spacing.xs,
+    backgroundColor: GREEN_SOFT,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
   },
-  scheduleInfo: { flex: 1 },
-  scheduleTitle: {
-    color: colors.text,
+
+  runningDot: {
+    width: 7,
+    height: 7,
+    borderRadius: radius.pill,
+    backgroundColor: GREEN,
+  },
+
+  runningBadgeText: {
+    color: GREEN,
     fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
+    fontWeight: fontWeight.semibold,
   },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.md,
+
+  // KARTU KELAS
+  classList: {
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+  },
+
+  classCard: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: GUTTER,
+    overflow: 'hidden',
+  },
+
+  archivedCard: {
+    opacity: 0.9,
+  },
+
+  classHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+
+  subjectIcon: {
+    width: 57,
+    height: 62,
+    borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tokenBox: {
-    backgroundColor: colors.cardAlt,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginVertical: spacing.md,
+
+  mathIcon: {
+    backgroundColor: 'rgba(75,141,255,0.18)',
   },
-  tokenLabel: {
+
+  historyIcon: {
+    backgroundColor: 'rgba(255,182,92,0.16)',
+  },
+
+  defaultSubjectIcon: {
+    backgroundColor: colors.cardAlt,
+  },
+
+  classMainInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  className: {
+    color: colors.text,
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.bold,
+    lineHeight: 25,
+  },
+
+  primarySchedule: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+
+  primaryScheduleText: {
+    flex: 1,
     color: colors.textMuted,
+    fontSize: fontSize.sm,
+    lineHeight: 20,
+  },
+
+  activeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: GREEN_SOFT,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+  },
+
+  activeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: radius.pill,
+    backgroundColor: GREEN,
+  },
+
+  activeText: {
+    color: GREEN,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
-    letterSpacing: 1,
   },
-  token: {
-    color: colors.primary,
+
+  inactiveBadge: {
+    backgroundColor: colors.cardAlt,
+  },
+
+  inactiveDot: {
+    backgroundColor: colors.textMuted,
+  },
+
+  inactiveText: {
+    color: colors.textMuted,
+  },
+
+  // METRIK KARTU
+  classMetrics: {
+    flexDirection: 'row',
+    backgroundColor: colors.cardAlt,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xs,
+    marginTop: spacing.lg,
+    gap: spacing.xs,
+  },
+
+  metricItem: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+
+  metricLabel: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    textAlign: 'center',
+  },
+
+  metricValue: {
+    color: colors.text,
     fontSize: fontSize.xl,
-    fontWeight: fontWeight.heavy,
-    letterSpacing: 1.5,
-    marginVertical: spacing.sm,
+    fontWeight: fontWeight.bold,
   },
-  copyButton: {
-    minHeight: 42,
+
+  taskValue: {
+    color: ORANGE,
+  },
+
+  tokenMetric: {
+    flex: 1.3,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+
+  tokenValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    maxWidth: '100%',
+  },
+
+  tokenMetricValue: {
+    color: colors.guru,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    flexShrink: 1,
+  },
+
+  // TOMBOL KARTU
+  cardActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+
+  viewClassButton: {
+    flex: 1,
+    minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.primary,
+    backgroundColor: '#ADC7FF',
     borderRadius: radius.md,
-    backgroundColor: colors.primarySoft,
+    paddingHorizontal: spacing.sm,
   },
-  copyText: {
-    color: colors.primary,
-    fontSize: fontSize.md,
+
+  viewClassText: {
+    color: '#0D315F',
+    fontSize: fontSize.lg,
     fontWeight: fontWeight.bold,
   },
-  secondaryButton: { marginTop: spacing.sm },
-  deleteButton: { marginTop: spacing.md },
-  editForm: {
+
+  shareButton: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
     backgroundColor: colors.cardAlt,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+  },
+
+  shareText: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+
+  // DETAIL INLINE
+  expandedDetails: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+  },
+
+  detailHeading: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+    marginBottom: spacing.sm,
+  },
+
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+
+  detailLabel: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+  },
+
+  detailValue: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+    textAlign: 'right',
+  },
+
+  addScheduleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: BLUE_SOFT,
+  },
+
+  addScheduleText: {
+    color: colors.primary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+
+  emptyScheduleText: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    lineHeight: 21,
+    marginBottom: spacing.md,
+  },
+
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.cardAlt,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+
+  scheduleRowIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.md,
+    backgroundColor: BLUE_SOFT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  scheduleRowText: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  scheduleRowTitle: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+
+  scheduleRowTime: {
+    color: colors.guru,
+    fontSize: fontSize.sm,
+    marginTop: 3,
+  },
+
+  scheduleRowLocation: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    lineHeight: 18,
+    marginTop: 3,
+  },
+
+  scheduleAction: {
+    width: 34,
+    height: 38,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  manageActions: {
+    marginTop: spacing.md,
+  },
+
+  editForm: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.bg,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     padding: spacing.md,
+  },
+
+  // ARSIP
+  archiveHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
     marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+
+  archiveHeadingText: {
+    flex: 1,
+  },
+
+  archiveTitle: {
+    color: colors.text,
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.bold,
+  },
+
+  archiveCount: {
+    backgroundColor: colors.cardAlt,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+
+  archiveCountText: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+  },
+
+  archiveEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.xl,
+  },
+
+  archiveEmptyText: {
+    flex: 1,
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    lineHeight: 20,
+  },
+
+  // LOADING / KOSONG
+  loading: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+
+  loadingText: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    marginTop: spacing.sm,
+  },
+
+  emptyCard: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+    marginBottom: spacing.xl,
+  },
+
+  emptyTitle: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
+    marginTop: spacing.md,
+  },
+
+  emptyDescription: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginTop: spacing.sm,
   },
 });
