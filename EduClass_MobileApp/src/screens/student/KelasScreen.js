@@ -342,9 +342,6 @@ export default function KelasScreen({ navigation }) {
         {/* JUDUL HALAMAN */}
         <View style={styles.pageHeading}>
           <Text style={styles.pageTitle}>Kelas Saya</Text>
-          <Text style={styles.pageSubtitle}>
-            Semua kelas yang sedang kamu ikuti
-          </Text>
         </View>
 
         <FormAlert message={error} />
@@ -506,35 +503,6 @@ export default function KelasScreen({ navigation }) {
                         ]}
                       >
                         {item.aktif ? 'AKTIF' : 'DITUTUP'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* CHIPS INFORMASI */}
-                  <View style={styles.infoChips}>
-                    {typeof item.jumlah_siswa === 'number' ? (
-                      <View style={styles.infoChip}>
-                        <Ionicons
-                          name="people-outline"
-                          size={15}
-                          color={colors.textMuted}
-                        />
-
-                        <Text style={styles.infoChipText}>
-                          {item.jumlah_siswa} Siswa
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    <View style={styles.taskChip}>
-                      <Ionicons
-                        name="calendar-outline"
-                        size={15}
-                        color="#FFB4B4"
-                      />
-
-                      <Text style={styles.taskChipText}>
-                        {item.jumlah_jadwal ?? '—'} Jadwal Aktif
                       </Text>
                     </View>
                   </View>

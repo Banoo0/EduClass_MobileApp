@@ -1128,6 +1128,19 @@ export default function KelolaKelasScreen({ navigation }) {
                   </View>
 
                   <Pressable
+                    onPress={() => navigation.navigate('KelolaPertemuan', {
+                      schedule,
+                      classId: item.id,
+                      className: `${item.nama_mapel || 'Kelas'}${item.rombel ? ` ${item.rombel}` : ''}`,
+                    })}
+                    style={styles.scheduleAction}
+                    accessibilityRole="button"
+                    accessibilityLabel="Kelola pertemuan"
+                  >
+                    <Ionicons name="clipboard-outline" size={20} color={colors.primary} />
+                  </Pressable>
+
+                  <Pressable
                     onPress={() => startEditing(item, schedule)}
                     style={styles.scheduleAction}
                     accessibilityRole="button"

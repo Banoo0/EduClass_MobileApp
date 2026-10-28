@@ -70,6 +70,13 @@ const DAY_ORDER = Object.fromEntries(
   DAYS.map((day, index) => [day, index])
 );
 
+const ATTENDANCE_LABELS = {
+  hadir: 'Hadir',
+  izin: 'Izin',
+  sakit: 'Sakit',
+  alpa: 'Tidak hadir',
+};
+
 // =====================================================
 // HELPER TANGGAL DAN JAM
 // =====================================================
@@ -263,7 +270,6 @@ export default function JadwalScreen({ navigation }) {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [attendanceBusyId, setAttendanceBusyId] = useState(null);
   const [error, setError] = useState('');
 
   const [selectedDateKey, setSelectedDateKey] = useState(
@@ -461,118 +467,6 @@ export default function JadwalScreen({ navigation }) {
   const weekNumber = getWeekNumber(now);
 
   // ===================================================
-  // PRESENSI MENGGUNAKAN MEETINGS DAN ATTENDANCES
-  // ===================================================
-
-  const handleAttendance = async (schedule) => {
-    if (!studentId) {
-      notify('Tidak bisa presensi', 'Akun siswa tidak ditemukan.');
-      return;
-    }
-
-    if (selectedDateKey !== todayKey) {
-      notify(
-        'Presensi belum tersedia',
-        'Presensi hanya dapat dilakukan pada tanggal pertemuan hari ini.'
-      );
-      return;
-    }
-
-    const meeting = meetings.find(
-      (item) =>
-        item.schedule_id === schedule.id &&
-        item.tanggal === selectedDateKey
-    );
-
-    if (!meeting) {
-      notify(
-        'Belum ada sesi presensi',
-        'Guru belum membuat pertemuan untuk jadwal dan tanggal ini.'
-      );
-      return;
-    }
-
-    if (attendanceMap[meeting.id]) {
-      notify(
-        'Presensi sudah tercatat',
-        `Status: ${attendanceMap[meeting.id].status || 'hadir'}`
-      );
-      return;
-    }
-
-    const currentTimestamp = Date.now();
-
-    if (
-      !meeting.presensi_dibuka_at ||
-      currentTimestamp < new Date(meeting.presensi_dibuka_at).getTime()
-    ) {
-      notify(
-        'Presensi belum dibuka',
-        'Tunggu sampai guru membuka presensi.'
-      );
-      return;
-    }
-
-    if (
-      meeting.presensi_ditutup_at &&
-      currentTimestamp > new Date(meeting.presensi_ditutup_at).getTime()
-    ) {
-      notify(
-        'Presensi sudah ditutup',
-        'Waktu presensi pertemuan ini sudah berakhir.'
-      );
-      return;
-    }
-
-    setAttendanceBusyId(schedule.id);
-
-    try {
-      const { data, error: insertError } = await supabase
-        .from('attendances')
-        .insert({
-          meeting_id: meeting.id,
-          student_id: studentId,
-          status: 'hadir',
-        })
-        .select('id, meeting_id, status')
-        .single();
-
-      if (insertError) {
-        if (insertError.code === '23505') {
-          notify(
-            'Presensi sudah tercatat',
-            'Akun ini sudah memiliki presensi pada pertemuan tersebut.'
-          );
-
-          await loadSchedules(true);
-          return;
-        }
-
-        notify(
-          'Presensi gagal',
-          insertError.message ||
-            'Periksa izin presensi atau coba kembali.'
-        );
-        return;
-      }
-
-      setAttendanceMap((previous) => ({
-        ...previous,
-        [meeting.id]: data,
-      }));
-
-      notify(
-        'Presensi berhasil',
-        'Kehadiran kamu sudah disimpan.'
-      );
-    } catch (err) {
-      notify('Presensi gagal', err.message || 'Silakan coba kembali.');
-    } finally {
-      setAttendanceBusyId(null);
-    }
-  };
-
-  // ===================================================
   // MASUK ONLINE
   // ===================================================
 
@@ -644,70 +538,6 @@ export default function JadwalScreen({ navigation }) {
             </Text>
           </View>
         </View>
-
-        {/* RINGKASAN */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <View style={styles.statTop}>
-              <Text style={styles.statLabel}>Hari Ini</Text>
-              <View style={styles.statIconBlue}>
-                <Ionicons
-                  name="book"
-                  size={16}
-                  color="#A7C5FF"
-                />
-              </View>
-            </View>
-
-            <View style={styles.statValueRow}>
-              <Text style={[styles.statNumber, { color: '#A7C5FF' }]}>
-                {todaySchedules.length}
-              </Text>
-              <Text style={styles.statUnit}>Mapel</Text>
-            </View>
-          </View>
-
-          <View style={styles.statCard}>
-            <View style={styles.statTop}>
-              <Text style={styles.statLabel}>Minggu Ini</Text>
-              <View style={styles.statIconGreen}>
-                <Ionicons
-                  name="calendar"
-                  size={16}
-                  color={GREEN}
-                />
-              </View>
-            </View>
-
-            <View style={styles.statValueRow}>
-              <Text style={[styles.statNumber, { color: GREEN }]}>
-                {schedules.length}
-              </Text>
-              <Text style={styles.statUnit}>Sesi</Text>
-            </View>
-          </View>
-
-          <View style={styles.statCard}>
-            <View style={styles.statTop}>
-              <Text style={styles.statLabel}>Durasi</Text>
-              <View style={styles.statIconOrange}>
-                <Ionicons
-                  name="time"
-                  size={16}
-                  color="#FFB65C"
-                />
-              </View>
-            </View>
-
-            <View style={styles.statValueRow}>
-              <Text style={[styles.statNumber, { color: '#FFB65C' }]}>
-                {Math.round(totalDuration / 60)}
-              </Text>
-              <Text style={styles.statUnit}>Jam</Text>
-            </View>
-          </View>
-        </View>
-
         {/* PILIH TANGGAL MINGGU INI */}
         <View style={styles.calendarSection}>
           <View style={styles.calendarHeading}>
@@ -1024,43 +854,24 @@ export default function JadwalScreen({ navigation }) {
                         </View>
                       </View>
 
-                      {/* TINDAKAN SESI */}
+                      {/* STATUS PRESENSI DAN TINDAKAN SESI */}
                       <View style={styles.actionRow}>
-                        <Pressable
-                          onPress={() => handleAttendance(item)}
-                          disabled={
-                            attendanceBusyId === item.id ||
-                            Boolean(attended)
-                          }
-                          style={({ pressed }) => [
-                            styles.actionButton,
-                            styles.attendanceButton,
-                            pressed && styles.buttonPressed,
-                            Boolean(attended) &&
-                              styles.actionButtonDisabled,
-                          ]}
-                        >
-                          {attendanceBusyId === item.id ? (
-                            <ActivityIndicator
-                              size="small"
-                              color="#063D31"
-                            />
-                          ) : (
-                            <Ionicons
-                              name={
-                                attended
-                                  ? 'checkmark-circle'
-                                  : 'person-add-outline'
-                              }
-                              size={16}
-                              color="#063D31"
-                            />
-                          )}
-
-                          <Text style={styles.attendanceButtonText}>
-                            {attended ? 'Sudah Hadir' : 'Absensi Hadir'}
+                        <View style={[
+                          styles.attendanceStatus,
+                          attended?.status === 'hadir' && styles.attendanceStatusPresent,
+                          attended?.status === 'alpa' && styles.attendanceStatusAbsent,
+                        ]}>
+                          <Ionicons
+                            name={attended?.status === 'hadir' ? 'checkmark-circle' : attended?.status === 'alpa' ? 'close-circle' : 'time-outline'}
+                            size={17}
+                            color={attended?.status === 'hadir' ? GREEN : attended?.status === 'alpa' ? colors.danger : colors.textMuted}
+                          />
+                          <Text style={styles.attendanceStatusText}>
+                            {attended?.status
+                              ? ATTENDANCE_LABELS[attended.status] || attended.status
+                              : meeting ? 'Belum diabsen' : 'Belum ada pertemuan'}
                           </Text>
-                        </Pressable>
+                        </View>
 
                         <Pressable
                           onPress={() => handleOpenOnline(item)}
@@ -1622,12 +1433,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
 
-  attendanceButton: {
-    backgroundColor: GREEN,
+  attendanceStatus: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.cardAlt,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xs,
   },
 
-  attendanceButtonText: {
-    color: '#063D31',
+  attendanceStatusPresent: {
+    backgroundColor: colors.successSoft,
+  },
+
+  attendanceStatusAbsent: {
+    backgroundColor: colors.dangerSoft,
+  },
+
+  attendanceStatusText: {
+    color: colors.text,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
   },
@@ -1640,10 +1468,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
-  },
-
-  actionButtonDisabled: {
-    opacity: 0.65,
   },
 
   // EMPTY STATE DAN LOADING

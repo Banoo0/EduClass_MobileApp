@@ -1,17 +1,29 @@
 
 import { StyleSheet, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import PlaceholderScreen from '../components/PlaceholderScreen';
 import BerandaScreen from '../screens/teacher/BerandaScreen';
 import KelolaKelasScreen from '../screens/teacher/KelolaKelasScreen';
+import MeetingManagementScreen from '../screens/teacher/MeetingManagementScreen';
 import JadwalScreen from '../screens/teacher/JadwalScreen';
 import ProfilScreen from '../screens/teacher/ProfilScreen';
 
 import { colors } from '../core/theme';
 
 const Tab = createBottomTabNavigator();
+const ClassStack = createNativeStackNavigator();
+
+function ClassManagementNavigator() {
+  return (
+    <ClassStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+      <ClassStack.Screen name="DaftarKelas" component={KelolaKelasScreen} />
+      <ClassStack.Screen name="KelolaPertemuan" component={MeetingManagementScreen} />
+    </ClassStack.Navigator>
+  );
+}
 
 const BuatTugas = () => (
   <PlaceholderScreen title="Buat tugas" />
@@ -67,7 +79,7 @@ export default function TeacherTabs() {
 
       <Tab.Screen
         name="KelolaKelas"
-        component={KelolaKelasScreen}
+        component={ClassManagementNavigator}
         options={{ title: 'Kelola Kelas' }}
       />
 
