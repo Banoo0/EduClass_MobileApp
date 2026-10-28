@@ -58,13 +58,24 @@ const DAY_ORDER = Object.fromEntries(
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+// =====================================================
+// KONSTANTA WARNA
+// =====================================================
+
 const BLUE = '#4B8DFF';
 const BLUE_SOFT = 'rgba(75,141,255,0.18)';
+
 const GREEN = '#36D6A0';
 const GREEN_SOFT = 'rgba(54,214,160,0.16)';
+
 const ORANGE = '#FFB65C';
 const ORANGE_SOFT = 'rgba(255,182,92,0.16)';
+
 const RED = '#A40000';
+
+// =====================================================
+// HELPER
+// =====================================================
 
 function notify(title, message) {
   if (Platform.OS === 'web') {
@@ -136,21 +147,21 @@ function getSubjectIcon(subject = '') {
   return 'school-outline';
 }
 
-// Semester dan tahun hanya dipakai untuk pengelompokan tampilan.
-// Tidak mengubah kelas atau status token di database.
+// Pengelompokan semester hanya untuk tampilan.
 function getCurrentAcademicTerm(date = new Date()) {
   const year = date.getFullYear();
   const month = date.getMonth();
 
   const academicStartYear = month >= 6 ? year : year - 1;
-  const semester = month >= 6 && month <= 11
-    ? 'Ganjil'
-    : 'Genap';
+
+  const semester =
+    month >= 6 && month <= 11 ? 'Ganjil' : 'Genap';
 
   return {
     year: `${academicStartYear}/${academicStartYear + 1}`,
     semester,
-    key: academicStartYear * 2 +
+    key:
+      academicStartYear * 2 +
       (semester === 'Genap' ? 1 : 0),
   };
 }
@@ -217,56 +228,9 @@ function getLocation(schedule) {
   ].filter(Boolean).join(' • ') || 'Lokasi belum diatur';
 }
 
-function StatCard({ title, value, caption, icon, tone }) {
-  const toneStyles = {
-    blue: {
-      color: BLUE,
-      backgroundColor: BLUE_SOFT,
-    },
-    green: {
-      color: GREEN,
-      backgroundColor: GREEN_SOFT,
-    },
-    orange: {
-      color: ORANGE,
-      backgroundColor: ORANGE_SOFT,
-    },
-  };
-
-  const toneStyle = toneStyles[tone] || toneStyles.blue;
-
-  return (
-    <View style={styles.statCard}>
-      <View style={styles.statHeader}>
-        <Text style={styles.statLabel}>{title}</Text>
-
-        <View
-          style={[
-            styles.statIcon,
-            { backgroundColor: toneStyle.backgroundColor },
-          ]}
-        >
-          <Ionicons
-            name={icon}
-            size={18}
-            color={toneStyle.color}
-          />
-        </View>
-      </View>
-
-      <Text
-        style={[
-          styles.statNumber,
-          { color: toneStyle.color },
-        ]}
-      >
-        {value}
-      </Text>
-
-      <Text style={styles.statCaption}>{caption}</Text>
-    </View>
-  );
-}
+// =====================================================
+// KOMPONEN PILIH HARI
+// =====================================================
 
 function DayPicker({ value, onChange }) {
   return (
@@ -297,6 +261,10 @@ function DayPicker({ value, onChange }) {
     </View>
   );
 }
+
+// =====================================================
+// HALAMAN KELOLA KELAS
+// =====================================================
 
 export default function KelolaKelasScreen({ navigation }) {
   const { user, profile } = useAuth();
@@ -396,32 +364,18 @@ export default function KelolaKelasScreen({ navigation }) {
   );
 
   // ===================================================
-  // KELOMPOK KELAS AKTIF DAN ARSIP
+  // KELOMPOK KELAS BERJALAN DAN ARSIP
   // ===================================================
 
   const currentClasses = classes.filter((item) => {
     const key = getClassTermKey(item);
-
     return key === null || key >= academicTerm.key;
   });
 
   const archivedClasses = classes.filter((item) => {
     const key = getClassTermKey(item);
-
     return key !== null && key < academicTerm.key;
   });
-
-  const activeCount = currentClasses.filter(
-    (item) => item.aktif
-  ).length;
-
-  const totalStudents = currentClasses.reduce(
-    (total, item) => total + Number(item.jumlah_siswa || 0),
-    0
-  );
-
-  // Belum dihitung karena service tugas di source saat ini belum tersedia.
-  const totalTasks = '—';
 
   // ===================================================
   // RESET FORM
@@ -558,6 +512,7 @@ export default function KelolaKelasScreen({ navigation }) {
       }
 
       await Clipboard.setStringAsync(message);
+
       notify(
         'Informasi kelas disalin',
         'Tempelkan informasi ini di tempat kamu ingin membagikannya.'
@@ -573,7 +528,7 @@ export default function KelolaKelasScreen({ navigation }) {
   };
 
   // ===================================================
-  // EDIT KELAS ATAU JADWAL DI DALAM HALAMAN INI
+  // EDIT KELAS ATAU JADWAL
   // ===================================================
 
   const startEditing = (item, schedule = null) => {
@@ -672,7 +627,11 @@ export default function KelolaKelasScreen({ navigation }) {
       }
 
       cancelEditing();
-      notify('Perubahan tersimpan', 'Informasi kelas dan jadwal berhasil diperbarui.');
+
+      notify(
+        'Perubahan tersimpan',
+        'Informasi kelas dan jadwal berhasil diperbarui.'
+      );
     } catch (err) {
       setEditError(err.message || 'Gagal menyimpan perubahan.');
     } finally {
@@ -681,7 +640,7 @@ export default function KelolaKelasScreen({ navigation }) {
   };
 
   // ===================================================
-  // HAPUS SATU JADWAL
+  // HAPUS JADWAL
   // ===================================================
 
   const performDeleteSchedule = async (item, schedule) => {
@@ -750,6 +709,7 @@ export default function KelolaKelasScreen({ navigation }) {
 
       setExpandedClassId(null);
       await loadClasses(true);
+
       notify('Kelas dihapus', 'Kelas berhasil dihapus.');
     } catch (err) {
       setError(err.message || 'Gagal menghapus kelas.');
@@ -931,7 +891,6 @@ export default function KelolaKelasScreen({ navigation }) {
           archived && styles.archivedCard,
         ]}
       >
-        {/* HEADER KARTU */}
         <View style={styles.classHeader}>
           <View
             style={[
@@ -1000,7 +959,7 @@ export default function KelolaKelasScreen({ navigation }) {
           </View>
         </View>
 
-        {/* STATISTIK KARTU */}
+        {/* INFORMASI SISWA DAN TOKEN */}
         <View style={styles.classMetrics}>
           <View style={styles.metricItem}>
             <Ionicons
@@ -1057,7 +1016,7 @@ export default function KelolaKelasScreen({ navigation }) {
           </Pressable>
         </View>
 
-        {/* TOMBOL */}
+        {/* TOMBOL KARTU */}
         <View style={styles.cardActions}>
           <Pressable
             onPress={() =>
@@ -1247,6 +1206,7 @@ export default function KelolaKelasScreen({ navigation }) {
 
   // ===================================================
   // TAMPILAN UTAMA
+  // Kartu ringkasan dan deskripsi yang diminta sudah dihapus.
   // ===================================================
 
   return (
@@ -1272,14 +1232,9 @@ export default function KelolaKelasScreen({ navigation }) {
       >
         <FormAlert message={error} />
 
-        {/* JUDUL DAN CTA */}
         <View style={styles.pageHeading}>
           <View style={styles.pageHeadingText}>
             <Text style={styles.pageTitle}>Kelola Kelas</Text>
-
-            <Text style={styles.pageSubtitle}>
-              Daftar kelas yang kamu ampu semester ini.
-            </Text>
           </View>
 
           <Pressable
@@ -1304,42 +1259,11 @@ export default function KelolaKelasScreen({ navigation }) {
           </Pressable>
         </View>
 
-        {/* RINGKASAN */}
-        <View style={styles.statsRow}>
-          <StatCard
-            title="Kelas Aktif"
-            value={activeCount}
-            caption={academicTerm.semester === 'Genap'
-              ? 'Smt. Genap'
-              : 'Smt. Ganjil'}
-            icon="business-outline"
-            tone="blue"
-          />
-
-          <StatCard
-            title="Total Siswa"
-            value={totalStudents}
-            caption={`${currentClasses.length} kelas berjalan`}
-            icon="people-outline"
-            tone="green"
-          />
-
-          <StatCard
-            title="Total Tugas"
-            value={totalTasks}
-            caption="Data belum terhubung"
-            icon="clipboard-outline"
-            tone="orange"
-          />
-        </View>
-
         {/* FORM BUAT KELAS */}
         {showCreateForm ? (
           <View style={styles.createForm}>
             <View style={styles.inlineSectionHeading}>
-              <Text style={styles.formHeading}>
-                Buat Kelas Baru
-              </Text>
+              <Text style={styles.formHeading}>Buat Kelas Baru</Text>
 
               <Pressable
                 onPress={() => setShowCreateForm(false)}
@@ -1455,15 +1379,11 @@ export default function KelolaKelasScreen({ navigation }) {
           </View>
         ) : null}
 
-        {/* DAFTAR KELAS SEMESTER BERJALAN */}
+        {/* DAFTAR KELAS: TANPA SUBTITLE TAMBAHAN */}
         <View style={styles.sectionHeader}>
           <View style={styles.sectionHeaderText}>
             <Text style={styles.sectionHeading}>
               Semester {academicTerm.semester} {academicTerm.year}
-            </Text>
-
-            <Text style={styles.sectionCaption}>
-              Kelas yang sedang kamu kelola
             </Text>
           </View>
 
@@ -1501,15 +1421,11 @@ export default function KelolaKelasScreen({ navigation }) {
           </View>
         )}
 
-        {/* ARSIP KELAS */}
+        {/* ARSIP: TANPA DESKRIPSI TAMBAHAN */}
         <View style={styles.archiveHeading}>
           <View style={styles.archiveHeadingText}>
             <Text style={styles.archiveTitle}>
               Arsip Kelas Terdahulu
-            </Text>
-
-            <Text style={styles.sectionCaption}>
-              Kelas dari periode ajaran sebelumnya.
             </Text>
           </View>
 
@@ -1526,23 +1442,15 @@ export default function KelolaKelasScreen({ navigation }) {
               renderClassCard(item, true)
             )}
           </View>
-        ) : (
-          <View style={styles.archiveEmpty}>
-            <Ionicons
-              name="archive-outline"
-              size={22}
-              color={colors.textMuted}
-            />
-
-            <Text style={styles.archiveEmptyText}>
-              Belum ada kelas dari periode sebelumnya.
-            </Text>
-          </View>
-        )}
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+// =====================================================
+// KOMPONEN DETAIL
+// =====================================================
 
 function DetailRow({ label, value }) {
   return (
@@ -1552,6 +1460,10 @@ function DetailRow({ label, value }) {
     </View>
   );
 }
+
+// =====================================================
+// STYLE
+// =====================================================
 
 const GUTTER = spacing.md + spacing.xs;
 
@@ -1567,7 +1479,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
 
-  // JUDUL DAN TOMBOL BUAT KELAS
   pageHeading: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1585,13 +1496,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.xxl + 4,
     fontWeight: fontWeight.heavy,
-  },
-
-  pageSubtitle: {
-    color: colors.textMuted,
-    fontSize: fontSize.md,
-    lineHeight: 22,
-    marginTop: spacing.xs,
   },
 
   createButton: {
@@ -1613,58 +1517,6 @@ const styles = StyleSheet.create({
 
   buttonPressed: {
     opacity: 0.78,
-  },
-
-  // STATISTIK
-  statsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
-  },
-
-  statCard: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 135,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    backgroundColor: colors.card,
-  },
-
-  statHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-
-  statLabel: {
-    flex: 1,
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-    lineHeight: 16,
-  },
-
-  statIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  statNumber: {
-    fontSize: fontSize.display + 4,
-    fontWeight: fontWeight.heavy,
-    lineHeight: 43,
-  },
-
-  statCaption: {
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-    marginTop: spacing.xs,
-    lineHeight: 17,
   },
 
   // FORM
@@ -1786,13 +1638,6 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.bold,
   },
 
-  sectionCaption: {
-    color: colors.textMuted,
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-    marginTop: spacing.xs,
-  },
-
   runningBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1897,11 +1742,19 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
 
+  inactiveBadge: {
+    backgroundColor: colors.cardAlt,
+  },
+
   activeDot: {
     width: 7,
     height: 7,
     borderRadius: radius.pill,
     backgroundColor: GREEN,
+  },
+
+  inactiveDot: {
+    backgroundColor: colors.textMuted,
   },
 
   activeText: {
@@ -1910,19 +1763,11 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.bold,
   },
 
-  inactiveBadge: {
-    backgroundColor: colors.cardAlt,
-  },
-
-  inactiveDot: {
-    backgroundColor: colors.textMuted,
-  },
-
   inactiveText: {
     color: colors.textMuted,
   },
 
-  // METRIK KARTU
+  // INFORMASI PADA KARTU
   classMetrics: {
     flexDirection: 'row',
     backgroundColor: colors.cardAlt,
@@ -2022,7 +1867,7 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.semibold,
   },
 
-  // DETAIL INLINE
+  // DETAIL KELAS
   expandedDetails: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -2176,24 +2021,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
   },
 
-  archiveEmpty: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.card,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.xl,
-  },
-
-  archiveEmptyText: {
-    flex: 1,
-    color: colors.textMuted,
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-  },
-
-  // LOADING / KOSONG
+  // LOADING DAN KOSONG
   loading: {
     alignItems: 'center',
     paddingVertical: spacing.xl,
