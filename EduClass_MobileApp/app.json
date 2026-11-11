@@ -6,8 +6,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "plugins": [
-      "expo-status-bar",
-      "expo-web-browser"
+
     ]
   }
 }

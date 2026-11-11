@@ -1,31 +1,67 @@
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+  writeBatch,
+  setDoc,
+} from 'firebase/firestore';
+import { auth, db } from '../core/firebase';
+import { deleteWhere, docToObject, toError } from '../core/firestoreHelpers';
 
-import { supabase } from '../core/supabase';
+// =====================================================
+// STRUKTUR DATA FIRESTORE (pengganti tabel Supabase)
+//   classes        : kelas (teacher_nama disimpan di sini supaya siswa bisa melihat nama guru)
+//   class_tokens   : {token} -> { class_id, teacher_id, aktif }  (untuk gabung kelas)
+//   class_members  : {classId}_{studentId} -> { class_id, student_id, teacher_id, student_nama, nomor_induk, token, joined_at }
+//   schedules      : jadwal mingguan kelas
+// =====================================================
 
-const CLASS_FIELDS = `
-  id,
-  teacher_id,
-  nama_mapel,
-  rombel,
-  tahun_ajaran,
-  semester,
-  token,
-  aktif,
-  created_at
-`;
+// Tanpa huruf/angka yang mirip (I, O, 0, 1) supaya mudah diketik siswa.
+const TOKEN_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-const SCHEDULE_FIELDS = `
-  id,
-  class_id,
-  teacher_id,
-  judul,
-  hari,
-  jam_mulai,
-  jam_selesai,
-  ruang,
-  gedung,
-  meeting_url,
-  created_at
-`;
+function generateToken(length = 6) {
+  let result = '';
+  for (let i = 0; i < length; i += 1) {
+    result += TOKEN_CHARS.charAt(Math.floor(Math.random() * TOKEN_CHARS.length));
+  }
+  return result;
+}
+
+const byJamMulai = (a, b) => String(a.jam_mulai || '').localeCompare(String(b.jam_mulai || ''));
+
+async function fetchClassesByIds(classIds) {
+  const snaps = await Promise.all(
+    classIds.map((id) => getDoc(doc(db, 'classes', id)).catch(() => null))
+  );
+  return snaps
+    .filter((snap) => snap && snap.exists())
+    .map(docToObject)
+    .sort((a, b) => String(a.nama_mapel || '').localeCompare(String(b.nama_mapel || '')));
+}
+
+// Satu query per kelas (aturan keamanan mensyaratkan filter class_id yang pasti).
+export async function fetchSchedulesByClass(classIds) {
+  const map = {};
+  let firstError = null;
+  await Promise.all(
+    (classIds || []).map(async (classId) => {
+      try {
+        const snap = await getDocs(query(collection(db, 'schedules'), where('class_id', '==', classId)));
+        map[classId] = snap.docs.map(docToObject).sort(byJamMulai);
+      } catch (e) {
+        map[classId] = [];
+        if (!firstError) firstError = toError(e);
+      }
+    })
+  );
+  return { data: map, error: firstError };
+}
 
 // =====================================================
 // KELAS GURU
@@ -33,53 +69,48 @@ const SCHEDULE_FIELDS = `
 
 export async function fetchTeacherClasses(teacherId) {
   if (!teacherId) {
-    return {
-      data: null,
-      error: new Error('Akun guru tidak ditemukan.'),
-    };
+    return { data: null, error: new Error('Akun guru tidak ditemukan.') };
   }
 
-  const { data, error } = await supabase
-    .from('classes')
-    .select(`
-      ${CLASS_FIELDS},
-      class_members(count),
-      schedules(
-        id,
-        class_id,
-        teacher_id,
-        judul,
-        hari,
-        jam_mulai,
-        jam_selesai,
-        ruang,
-        gedung,
-        meeting_url,
-        created_at
-      )
-    `)
-    .eq('teacher_id', teacherId)
-    .order('created_at', { ascending: false });
+  try {
+    const [classSnap, memberSnap, scheduleSnap] = await Promise.all([
+      getDocs(query(collection(db, 'classes'), where('teacher_id', '==', teacherId))),
+      getDocs(query(collection(db, 'class_members'), where('teacher_id', '==', teacherId))),
+      getDocs(query(collection(db, 'schedules'), where('teacher_id', '==', teacherId))),
+    ]);
 
-  if (error) return { data: null, error };
+    const memberCount = {};
+    memberSnap.forEach((d) => {
+      const classId = d.data().class_id;
+      memberCount[classId] = (memberCount[classId] || 0) + 1;
+    });
 
-  return {
-    data: (data || []).map((item) => ({
-      ...item,
-      jumlah_siswa: Number(
-        item.class_members?.[0]?.count || 0
-      ),
-      schedules: [...(item.schedules || [])].sort((a, b) =>
-        String(a.jam_mulai).localeCompare(String(b.jam_mulai))
-      ),
-    })),
-    error: null,
-  };
+    const schedulesByClass = {};
+    scheduleSnap.forEach((d) => {
+      const item = docToObject(d);
+      if (!schedulesByClass[item.class_id]) schedulesByClass[item.class_id] = [];
+      schedulesByClass[item.class_id].push(item);
+    });
+
+    const data = classSnap.docs
+      .map(docToObject)
+      .map((item) => ({
+        ...item,
+        jumlah_siswa: memberCount[item.id] || 0,
+        schedules: (schedulesByClass[item.id] || []).sort(byJamMulai),
+      }))
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+
+    return { data, error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }
 
 // =====================================================
 // BUAT KELAS + JADWAL PERTAMA
-// Menggunakan dua operasi tabel, tanpa SQL function baru.
+// Token dibuat di sini (dulu oleh trigger Supabase) dan dijamin unik
+// lewat dokumen class_tokens/{token}.
 // =====================================================
 
 export async function createClass({
@@ -94,181 +125,173 @@ export async function createClass({
   ruang,
   gedung,
 }) {
-  if (!teacherId) {
-    return {
-      data: null,
-      schedule: null,
-      scheduleError: null,
-      error: new Error('Akun guru tidak ditemukan.'),
-    };
+  const fail = (error) => ({ data: null, schedule: null, scheduleError: null, error });
+
+  if (!teacherId) return fail(new Error('Akun guru tidak ditemukan.'));
+  if (!nama_mapel?.trim()) return fail(new Error('Nama mata pelajaran wajib diisi.'));
+
+  try {
+    const teacherSnap = await getDoc(doc(db, 'users', teacherId));
+    const teacherNama = teacherSnap.exists() ? teacherSnap.data().nama_lengkap || '' : '';
+
+    const classRef = doc(collection(db, 'classes'));
+    const scheduleRef = doc(collection(db, 'schedules'));
+    const withSchedule = Boolean(hari && jam_mulai && jam_selesai);
+
+    let token = null;
+    let lastError = null;
+
+    for (let attempt = 0; attempt < 3 && !token; attempt += 1) {
+      const candidate = generateToken();
+      // eslint-disable-next-line no-await-in-loop
+      const taken = await getDoc(doc(db, 'class_tokens', candidate));
+      if (!taken.exists()) {
+        const batch = writeBatch(db);
+        batch.set(classRef, {
+          teacher_id: teacherId,
+          teacher_nama: teacherNama,
+          nama_mapel: nama_mapel.trim(),
+          rombel: rombel?.trim() || null,
+          tahun_ajaran: tahun_ajaran?.trim() || null,
+          semester: semester?.trim() || null,
+          token: candidate,
+          aktif: true,
+          created_at: serverTimestamp(),
+        });
+        batch.set(doc(db, 'class_tokens', candidate), {
+          class_id: classRef.id,
+          teacher_id: teacherId,
+          aktif: true,
+        });
+        if (withSchedule) {
+          batch.set(scheduleRef, {
+            class_id: classRef.id,
+            teacher_id: teacherId,
+            judul: nama_mapel.trim(),
+            hari,
+            jam_mulai,
+            jam_selesai,
+            ruang: ruang?.trim() || null,
+            gedung: gedung?.trim() || null,
+            meeting_url: null,
+            created_at: serverTimestamp(),
+          });
+        }
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await batch.commit();
+          token = candidate;
+        } catch (e) {
+          lastError = e;
+        }
+      }
+    }
+
+    if (!token) {
+      return fail(toError(lastError) || new Error('Gagal membuat token kelas. Coba lagi.'));
+    }
+
+    const kelas = docToObject(await getDoc(classRef));
+    const schedule = withSchedule ? docToObject(await getDoc(scheduleRef)) : null;
+    return { data: kelas, schedule, scheduleError: null, error: null };
+  } catch (e) {
+    return fail(toError(e));
   }
-
-  if (!nama_mapel?.trim()) {
-    return {
-      data: null,
-      schedule: null,
-      scheduleError: null,
-      error: new Error('Nama mata pelajaran wajib diisi.'),
-    };
-  }
-
-  const { data: kelas, error: classError } = await supabase
-    .from('classes')
-    .insert({
-      teacher_id: teacherId,
-      nama_mapel: nama_mapel.trim(),
-      rombel: rombel?.trim() || null,
-      tahun_ajaran: tahun_ajaran?.trim() || null,
-      semester: semester?.trim() || null,
-      aktif: true,
-    })
-    .select(CLASS_FIELDS)
-    .single();
-
-  if (classError) {
-    return {
-      data: null,
-      schedule: null,
-      scheduleError: null,
-      error: classError,
-    };
-  }
-
-  // Token dibuat oleh trigger database yang sudah ada.
-  const { data: jadwal, error: scheduleError } = await supabase
-    .from('schedules')
-    .insert({
-      class_id: kelas.id,
-      teacher_id: teacherId,
-      judul: kelas.nama_mapel,
-      hari,
-      jam_mulai,
-      jam_selesai,
-      ruang: ruang?.trim() || null,
-      gedung: gedung?.trim() || null,
-    })
-    .select(SCHEDULE_FIELDS)
-    .single();
-
-  return {
-    data: kelas,
-    schedule: jadwal || null,
-    scheduleError: scheduleError || null,
-    error: null,
-  };
 }
 
 // =====================================================
 // EDIT INFORMASI KELAS
 // =====================================================
 
-export async function updateTeacherClass(
-  classId,
-  teacherId,
-  fields
-) {
+export async function updateTeacherClass(classId, teacherId, fields) {
   if (!fields.nama_mapel?.trim()) {
-    return {
-      data: null,
-      error: new Error('Nama mata pelajaran wajib diisi.'),
-    };
+    return { data: null, error: new Error('Nama mata pelajaran wajib diisi.') };
   }
 
-  const { data, error } = await supabase
-    .from('classes')
-    .update({
+  try {
+    const ref = doc(db, 'classes', classId);
+    const snap = await getDoc(ref);
+    if (!snap.exists() || snap.data().teacher_id !== teacherId) {
+      return { data: null, error: new Error('Kelas tidak ditemukan atau kamu tidak memiliki akses.') };
+    }
+
+    await updateDoc(ref, {
       nama_mapel: fields.nama_mapel.trim(),
       rombel: fields.rombel?.trim() || null,
       tahun_ajaran: fields.tahun_ajaran?.trim() || null,
       semester: fields.semester?.trim() || null,
-    })
-    .eq('id', classId)
-    .eq('teacher_id', teacherId)
-    .select(CLASS_FIELDS)
-    .maybeSingle();
+    });
 
-  if (error) return { data: null, error };
-
-  if (!data) {
-    return {
-      data: null,
-      error: new Error(
-        'Kelas tidak ditemukan atau kamu tidak memiliki akses.'
-      ),
-    };
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
   }
-
-  return { data, error: null };
 }
 
 // =====================================================
 // HAPUS KELAS
-// Perhatikan relasi ON DELETE CASCADE yang sudah ada.
+// Firestore tidak punya ON DELETE CASCADE, jadi data turunan dihapus manual.
+// Saat koleksi lain (assignments, submissions, materials, messages) sudah dibuat,
+// tambahkan ke daftar CHILD_COLLECTIONS di bawah.
 // =====================================================
 
+const CHILD_COLLECTIONS = ['attendance', 'meetings', 'schedules', 'class_members'];
+
 export async function deleteTeacherClass(classId, teacherId) {
-  const { data, error } = await supabase
-    .from('classes')
-    .delete()
-    .eq('id', classId)
-    .eq('teacher_id', teacherId)
-    .select('id')
-    .maybeSingle();
+  try {
+    const ref = doc(db, 'classes', classId);
+    const snap = await getDoc(ref);
+    if (!snap.exists() || snap.data().teacher_id !== teacherId) {
+      return { data: null, error: new Error('Kelas tidak ditemukan atau kamu tidak memiliki akses.') };
+    }
+    const token = snap.data().token;
 
-  if (error) return { data: null, error };
+    for (const name of CHILD_COLLECTIONS) {
+      // eslint-disable-next-line no-await-in-loop
+      await deleteWhere(name, [
+        ['class_id', classId],
+        ['teacher_id', teacherId],
+      ]);
+    }
 
-  if (!data) {
-    return {
-      data: null,
-      error: new Error(
-        'Kelas tidak ditemukan atau kamu tidak memiliki akses.'
-      ),
-    };
+    const batch = writeBatch(db);
+    if (token) batch.delete(doc(db, 'class_tokens', token));
+    batch.delete(ref);
+    await batch.commit();
+
+    return { data: { id: classId }, error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
   }
-
-  return { data, error: null };
 }
 
 // =====================================================
 // AKTIF / NONAKTIF TOKEN KELAS
 // =====================================================
 
-export async function setClassActive(
-  classId,
-  aktif,
-  teacherId
-) {
-  let query = supabase
-    .from('classes')
-    .update({ aktif })
-    .eq('id', classId);
+export async function setClassActive(classId, aktif, teacherId) {
+  try {
+    const uid = teacherId || auth.currentUser?.uid;
+    const ref = doc(db, 'classes', classId);
+    const snap = await getDoc(ref);
+    if (!snap.exists() || snap.data().teacher_id !== uid) {
+      return { data: null, error: new Error('Kelas tidak ditemukan atau tidak dapat diubah.') };
+    }
 
-  if (teacherId) {
-    query = query.eq('teacher_id', teacherId);
+    const batch = writeBatch(db);
+    batch.update(ref, { aktif });
+    if (snap.data().token) batch.update(doc(db, 'class_tokens', snap.data().token), { aktif });
+    await batch.commit();
+
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
   }
-
-  const { data, error } = await query
-    .select(CLASS_FIELDS)
-    .maybeSingle();
-
-  if (error) return { data: null, error };
-
-  if (!data) {
-    return {
-      data: null,
-      error: new Error(
-        'Kelas tidak ditemukan atau tidak dapat diubah.'
-      ),
-    };
-  }
-
-  return { data, error: null };
 }
 
 // =====================================================
 // CRUD JADWAL KELAS
-// scheduleId kosong = tambah jadwal.
-// scheduleId terisi = edit jadwal.
+// scheduleId kosong = tambah jadwal, terisi = edit jadwal.
 // =====================================================
 
 export async function saveClassSchedule({
@@ -283,24 +306,13 @@ export async function saveClassSchedule({
   gedung,
 }) {
   if (!classId || !teacherId) {
-    return {
-      data: null,
-      error: new Error('Informasi kelas atau guru tidak ditemukan.'),
-    };
+    return { data: null, error: new Error('Informasi kelas atau guru tidak ditemukan.') };
   }
-
   if (!hari || !jam_mulai || !jam_selesai) {
-    return {
-      data: null,
-      error: new Error('Hari dan jam wajib diisi.'),
-    };
+    return { data: null, error: new Error('Hari dan jam wajib diisi.') };
   }
-
   if (jam_selesai <= jam_mulai) {
-    return {
-      data: null,
-      error: new Error('Jam selesai harus setelah jam mulai.'),
-    };
+    return { data: null, error: new Error('Jam selesai harus setelah jam mulai.') };
   }
 
   const payload = {
@@ -314,201 +326,197 @@ export async function saveClassSchedule({
     gedung: gedung?.trim() || null,
   };
 
-  let query;
-
-  if (scheduleId) {
-    query = supabase
-      .from('schedules')
-      .update(payload)
-      .eq('id', scheduleId)
-      .eq('class_id', classId)
-      .eq('teacher_id', teacherId);
-  } else {
-    query = supabase
-      .from('schedules')
-      .insert(payload);
+  try {
+    let ref;
+    if (scheduleId) {
+      ref = doc(db, 'schedules', scheduleId);
+      const snap = await getDoc(ref);
+      if (!snap.exists() || snap.data().class_id !== classId || snap.data().teacher_id !== teacherId) {
+        return { data: null, error: new Error('Jadwal tidak ditemukan atau tidak dapat disimpan.') };
+      }
+      await updateDoc(ref, payload);
+    } else {
+      ref = await addDoc(collection(db, 'schedules'), {
+        ...payload,
+        meeting_url: null,
+        created_at: serverTimestamp(),
+      });
+    }
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
   }
-
-  const { data, error } = await query
-    .select(SCHEDULE_FIELDS)
-    .maybeSingle();
-
-  if (error) return { data: null, error };
-
-  if (!data) {
-    return {
-      data: null,
-      error: new Error(
-        'Jadwal tidak ditemukan atau tidak dapat disimpan.'
-      ),
-    };
-  }
-
-  return { data, error: null };
 }
 
-export async function deleteClassSchedule(
-  scheduleId,
-  classId,
-  teacherId
-) {
-  const { data, error } = await supabase
-    .from('schedules')
-    .delete()
-    .eq('id', scheduleId)
-    .eq('class_id', classId)
-    .eq('teacher_id', teacherId)
-    .select('id')
-    .maybeSingle();
+export async function deleteClassSchedule(scheduleId, classId, teacherId) {
+  try {
+    const ref = doc(db, 'schedules', scheduleId);
+    const snap = await getDoc(ref);
+    if (!snap.exists() || snap.data().class_id !== classId || snap.data().teacher_id !== teacherId) {
+      return { data: null, error: new Error('Jadwal tidak ditemukan atau kamu tidak memiliki akses.') };
+    }
 
-  if (error) return { data: null, error };
+    // Pertemuan dan presensi milik jadwal ini ikut dihapus.
+    const meetings = await getDocs(
+      query(
+        collection(db, 'meetings'),
+        where('schedule_id', '==', scheduleId),
+        where('teacher_id', '==', teacherId)
+      )
+    );
+    for (const m of meetings.docs) {
+      // eslint-disable-next-line no-await-in-loop
+      await deleteWhere('attendance', [
+        ['meeting_id', m.id],
+        ['teacher_id', teacherId],
+      ]);
+    }
+    await deleteWhere('meetings', [
+      ['schedule_id', scheduleId],
+      ['teacher_id', teacherId],
+    ]);
 
-  if (!data) {
-    return {
-      data: null,
-      error: new Error(
-        'Jadwal tidak ditemukan atau kamu tidak memiliki akses.'
-      ),
-    };
+    const batch = writeBatch(db);
+    batch.delete(ref);
+    await batch.commit();
+
+    return { data: { id: scheduleId }, error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
   }
-
-  return { data, error: null };
 }
 
 // =====================================================
-// SEMUA JADWAL MILIK GURU
+// SEMUA JADWAL MILIK GURU (dengan info kelas, seperti join di Supabase)
 // =====================================================
 
 export async function fetchTeacherSchedules(teacherId) {
   if (!teacherId) {
-    return {
-      data: null,
-      error: new Error('Akun guru tidak ditemukan.'),
-    };
+    return { data: null, error: new Error('Akun guru tidak ditemukan.') };
   }
 
-  const { data, error } = await supabase
-    .from('schedules')
-    .select(`
-      ${SCHEDULE_FIELDS},
-      classes(
-        id,
-        nama_mapel,
-        rombel,
-        tahun_ajaran,
-        semester
-      )
-    `)
-    .eq('teacher_id', teacherId);
+  try {
+    const [scheduleSnap, classSnap] = await Promise.all([
+      getDocs(query(collection(db, 'schedules'), where('teacher_id', '==', teacherId))),
+      getDocs(query(collection(db, 'classes'), where('teacher_id', '==', teacherId))),
+    ]);
 
-  return { data, error };
+    const classMap = {};
+    classSnap.forEach((d) => {
+      const c = docToObject(d);
+      classMap[c.id] = {
+        id: c.id,
+        nama_mapel: c.nama_mapel,
+        rombel: c.rombel,
+        tahun_ajaran: c.tahun_ajaran,
+        semester: c.semester,
+      };
+    });
+
+    const data = scheduleSnap.docs.map(docToObject).map((item) => ({
+      ...item,
+      classes: classMap[item.class_id] || null,
+    }));
+    return { data, error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }
 
 // =====================================================
-// LAYANAN SISWA — TETAP TERSEDIA
+// LAYANAN SISWA
 // =====================================================
 
 export async function joinClassByToken(token) {
-  const normalizedToken = String(token || '')
-    .trim()
-    .toUpperCase();
-
+  const normalizedToken = String(token || '').trim().toUpperCase();
   if (!normalizedToken) {
-    return {
-      data: null,
-      error: new Error('Masukkan token kelas.'),
-    };
+    return { data: null, error: new Error('Masukkan token kelas.') };
   }
 
-  const { data, error } = await supabase.rpc('join_class', {
-    p_token: normalizedToken,
-  });
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    return { data: null, error: new Error('Akun siswa tidak ditemukan. Silakan login ulang.') };
+  }
 
-  return { data, error };
+  try {
+    const tokenSnap = await getDoc(doc(db, 'class_tokens', normalizedToken));
+    // data null tanpa error -> layar menampilkan "Kelas tidak ditemukan"
+    if (!tokenSnap.exists()) return { data: null, error: null };
+
+    const { class_id: classId, teacher_id: teacherId, aktif } = tokenSnap.data();
+    if (aktif === false) {
+      return { data: null, error: new Error('Token kelas ini sedang dinonaktifkan oleh guru.') };
+    }
+
+    const memberRef = doc(db, 'class_members', `${classId}_${uid}`);
+    if ((await getDoc(memberRef)).exists()) {
+      return { data: null, error: new Error('Kamu sudah bergabung di kelas ini.') };
+    }
+
+    const profileSnap = await getDoc(doc(db, 'users', uid));
+    const profile = profileSnap.exists() ? profileSnap.data() : {};
+
+    await setDoc(memberRef, {
+      class_id: classId,
+      student_id: uid,
+      teacher_id: teacherId,
+      student_nama: profile.nama_lengkap || '',
+      nomor_induk: profile.nomor_induk || '',
+      token: normalizedToken,
+      joined_at: serverTimestamp(),
+    });
+
+    const classSnap = await getDoc(doc(db, 'classes', classId));
+    return { data: classSnap.exists() ? docToObject(classSnap) : { id: classId }, error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
+}
+
+async function fetchStudentClassIds(studentId) {
+  const snap = await getDocs(
+    query(collection(db, 'class_members'), where('student_id', '==', studentId))
+  );
+  return [...new Set(snap.docs.map((d) => d.data().class_id).filter(Boolean))];
 }
 
 export async function fetchStudentClasses(studentId) {
   if (!studentId) {
-    return {
-      data: null,
-      error: new Error('Akun siswa tidak ditemukan.'),
-    };
+    return { data: null, error: new Error('Akun siswa tidak ditemukan.') };
   }
-
-  const { data: memberships, error: memberError } =
-    await supabase
-      .from('class_members')
-      .select('class_id')
-      .eq('student_id', studentId);
-
-  if (memberError) return { data: null, error: memberError };
-
-  const classIds = [
-    ...new Set(
-      (memberships || [])
-        .map((item) => item.class_id)
-        .filter(Boolean)
-    ),
-  ];
-
-  if (!classIds.length) return { data: [], error: null };
-
-  const { data, error } = await supabase
-    .from('classes')
-    .select(CLASS_FIELDS)
-    .in('id', classIds)
-    .order('nama_mapel');
-
-  return { data, error };
+  try {
+    const classIds = await fetchStudentClassIds(studentId);
+    if (!classIds.length) return { data: [], error: null };
+    return { data: await fetchClassesByIds(classIds), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }
 
 export async function fetchStudentSchedules(studentId) {
   if (!studentId) {
-    return {
-      data: null,
-      error: new Error('Akun siswa tidak ditemukan.'),
-    };
+    return { data: null, error: new Error('Akun siswa tidak ditemukan.') };
   }
+  try {
+    const classIds = await fetchStudentClassIds(studentId);
+    if (!classIds.length) return { data: [], error: null };
 
-  const { data: memberships, error: memberError } =
-    await supabase
-      .from('class_members')
-      .select('class_id')
-      .eq('student_id', studentId);
+    const [classes, { data: byClass, error }] = await Promise.all([
+      fetchClassesByIds(classIds),
+      fetchSchedulesByClass(classIds),
+    ]);
+    if (error) return { data: null, error };
 
-  if (memberError) return { data: null, error: memberError };
+    const classMap = Object.fromEntries(
+      classes.map((c) => [c.id, { id: c.id, nama_mapel: c.nama_mapel, rombel: c.rombel }])
+    );
 
-  const classIds = [
-    ...new Set(
-      (memberships || [])
-        .map((item) => item.class_id)
-        .filter(Boolean)
-    ),
-  ];
-
-  if (!classIds.length) return { data: [], error: null };
-
-  const { data, error } = await supabase
-    .from('schedules')
-    .select(`
-      id,
-      class_id,
-      teacher_id,
-      judul,
-      hari,
-      jam_mulai,
-      jam_selesai,
-      ruang,
-      gedung,
-      meeting_url,
-      classes(
-        id,
-        nama_mapel,
-        rombel
-      )
-    `)
-    .in('class_id', classIds)
-    .order('jam_mulai', { ascending: true });
-
-  return { data, error };
+    const data = Object.values(byClass)
+      .flat()
+      .map((item) => ({ ...item, classes: classMap[item.class_id] || null }))
+      .sort(byJamMulai);
+    return { data, error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }

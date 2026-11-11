@@ -24,10 +24,10 @@ import FormAlert from '../../components/FormAlert';
 
 import { useAuth } from '../../context/AuthContext';
 import {
+  fetchSchedulesByClass,
   fetchStudentClasses,
   joinClassByToken,
 } from '../../services/classServices';
-import { supabase } from '../../core/supabase';
 
 import {
   colors,
@@ -136,86 +136,14 @@ export default function KelasScreen({ navigation }) {
 
       const classIds = baseClasses.map((item) => item.id);
 
-      const teacherIds = [
-        ...new Set(
-          baseClasses
-            .map((item) => item.teacher_id)
-            .filter(Boolean)
-        ),
-      ];
-
-      // Data tambahan bersifat opsional.
-      // Jika RLS membatasi query ini, kelas tetap ditampilkan.
-
-      let teacherMap = {};
-      let memberCountMap = {};
-      let scheduleCountMap = {};
-      let schedulesByClass = {};
-
-      if (teacherIds.length > 0) {
-        const { data: teachers, error: teachersError } =
-          await supabase
-            .from('profiles')
-            .select('id, nama_lengkap')
-            .in('id', teacherIds);
-
-        if (!teachersError && teachers) {
-          teacherMap = Object.fromEntries(
-            teachers.map((item) => [
-              item.id,
-              item.nama_lengkap,
-            ])
-          );
-        }
-      }
-
-      const { data: memberships, error: membersError } =
-        await supabase
-          .from('class_members')
-          .select('class_id')
-          .in('class_id', classIds);
-
-      if (!membersError && memberships) {
-        memberships.forEach((item) => {
-          memberCountMap[item.class_id] =
-            (memberCountMap[item.class_id] || 0) + 1;
-        });
-      }
-
-      const { data: schedules, error: schedulesError } =
-        await supabase
-          .from('schedules')
-          .select(
-            'id, class_id, judul, hari, jam_mulai, jam_selesai, ruang, gedung'
-          )
-          .in('class_id', classIds);
-
-      if (!schedulesError && schedules) {
-        schedules.forEach((item) => {
-          if (!schedulesByClass[item.class_id]) {
-            schedulesByClass[item.class_id] = [];
-          }
-
-          schedulesByClass[item.class_id].push(item);
-
-          scheduleCountMap[item.class_id] =
-            (scheduleCountMap[item.class_id] || 0) + 1;
-        });
-
-        Object.values(schedulesByClass).forEach((items) => {
-          items.sort((a, b) =>
-            String(a.jam_mulai || '').localeCompare(
-              String(b.jam_mulai || '')
-            )
-          );
-        });
-      }
+      // Jadwal bersifat opsional: jika gagal dimuat, kelas tetap ditampilkan.
+      // Nama guru sudah tersimpan di dokumen kelas (teacher_nama).
+      const { data: schedulesByClass } = await fetchSchedulesByClass(classIds);
 
       const enrichedClasses = baseClasses.map((item) => ({
         ...item,
-        nama_guru: teacherMap[item.teacher_id] || null,
-        jumlah_siswa: memberCountMap[item.id],
-        jumlah_jadwal: scheduleCountMap[item.id],
+        nama_guru: item.teacher_nama || null,
+        jumlah_jadwal: (schedulesByClass[item.id] || []).length,
         schedules: schedulesByClass[item.id] || [],
       }));
 

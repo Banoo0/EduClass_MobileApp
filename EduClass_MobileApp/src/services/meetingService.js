@@ -1,104 +1,190 @@
-import { supabase } from '../core/supabase';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
+import { auth, db } from '../core/firebase';
+import { deleteWhere, docToObject, toError } from '../core/firestoreHelpers';
+
+// =====================================================
+// STRUKTUR DATA FIRESTORE
+//   meetings   : {scheduleId}_{tanggal} -> { schedule_id, class_id, teacher_id, tanggal, topik, deskripsi,
+//                                           presensi_dibuka_at, presensi_ditutup_at, created_at }
+//   attendance : {meetingId}_{studentId} -> { meeting_id, class_id, teacher_id, student_id, status, waktu_absen }
+// ID dokumen gabungan menggantikan UNIQUE constraint di Supabase:
+// satu jadwal hanya punya satu pertemuan per tanggal, satu siswa satu presensi per pertemuan.
+// =====================================================
+
+async function getScheduleOrThrow(scheduleId) {
+  const snap = await getDoc(doc(db, 'schedules', scheduleId));
+  if (!snap.exists()) throw new Error('Jadwal tidak ditemukan.');
+  return docToObject(snap);
+}
+
+async function getMeetingOrThrow(meetingId) {
+  const snap = await getDoc(doc(db, 'meetings', meetingId));
+  if (!snap.exists()) throw new Error('Pertemuan tidak ditemukan.');
+  return docToObject(snap);
+}
 
 export async function fetchScheduleMeetings(scheduleId) {
-  const { data, error } = await supabase
-    .from('meetings')
-    .select('id, schedule_id, tanggal, topik, deskripsi, presensi_dibuka_at, presensi_ditutup_at')
-    .eq('schedule_id', scheduleId)
-    .order('tanggal', { ascending: false });
-  return { data: data ?? [], error };
+  try {
+    const schedule = await getScheduleOrThrow(scheduleId);
+    const uid = auth.currentUser?.uid;
+
+    const filters = [
+      where('class_id', '==', schedule.class_id),
+      where('schedule_id', '==', scheduleId),
+    ];
+    // Guru pemilik jadwal cukup membuktikan lewat teacher_id; siswa lewat keanggotaan kelas.
+    if (schedule.teacher_id === uid) filters.push(where('teacher_id', '==', uid));
+
+    const snap = await getDocs(query(collection(db, 'meetings'), ...filters));
+    const data = snap.docs
+      .map(docToObject)
+      .sort((a, b) => String(b.tanggal || '').localeCompare(String(a.tanggal || '')));
+    return { data, error: null };
+  } catch (e) {
+    return { data: [], error: toError(e) };
+  }
 }
 
 export async function createMeeting({ scheduleId, tanggal, topik, deskripsi }) {
-  const { data, error } = await supabase
-    .from('meetings')
-    .insert({
+  try {
+    const schedule = await getScheduleOrThrow(scheduleId);
+    const tanggalKey = String(tanggal).slice(0, 10); // YYYY-MM-DD
+    const ref = doc(db, 'meetings', `${scheduleId}_${tanggalKey}`);
+
+    if ((await getDoc(ref)).exists()) {
+      return { data: null, error: new Error('Pertemuan pada tanggal ini sudah ada.') };
+    }
+
+    await setDoc(ref, {
       schedule_id: scheduleId,
+      class_id: schedule.class_id,
+      teacher_id: schedule.teacher_id,
       tanggal,
-      topik: topik.trim(),
-      deskripsi: deskripsi.trim(),
-    })
-    .select('id, schedule_id, tanggal, topik, deskripsi, presensi_dibuka_at, presensi_ditutup_at')
-    .single();
-  return { data, error };
+      topik: (topik || '').trim(),
+      deskripsi: (deskripsi || '').trim(),
+      presensi_dibuka_at: null,
+      presensi_ditutup_at: null,
+      created_at: serverTimestamp(),
+    });
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }
 
 export async function updateMeeting({ meetingId, tanggal, topik, deskripsi }) {
-  const { data, error } = await supabase
-    .from('meetings')
-    .update({ tanggal, topik: topik.trim(), deskripsi: deskripsi.trim() })
-    .eq('id', meetingId)
-    .select('id, schedule_id, tanggal, topik, deskripsi, presensi_dibuka_at, presensi_ditutup_at')
-    .single();
-  return { data, error };
+  try {
+    const ref = doc(db, 'meetings', meetingId);
+    await updateDoc(ref, {
+      tanggal,
+      topik: (topik || '').trim(),
+      deskripsi: (deskripsi || '').trim(),
+    });
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }
 
 export async function deleteMeeting(meetingId) {
-  const { data, error } = await supabase
-    .from('meetings')
-    .delete()
-    .eq('id', meetingId)
-    .select('id')
-    .maybeSingle();
-  return { data, error };
+  try {
+    const meeting = await getMeetingOrThrow(meetingId);
+    await deleteWhere('attendance', [
+      ['meeting_id', meetingId],
+      ['teacher_id', meeting.teacher_id],
+    ]);
+    await deleteDoc(doc(db, 'meetings', meetingId));
+    return { data: { id: meetingId }, error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }
 
 export async function setMeetingAttendanceOpen(meeting, open) {
-  const changes = open
-    ? { presensi_dibuka_at: new Date().toISOString(), presensi_ditutup_at: null }
-    : { presensi_ditutup_at: new Date().toISOString() };
-
-  const { data, error } = await supabase
-    .from('meetings')
-    .update(changes)
-    .eq('id', meeting.id)
-    .select('id, schedule_id, tanggal, topik, deskripsi, presensi_dibuka_at, presensi_ditutup_at')
-    .single();
-  return { data, error };
+  try {
+    const ref = doc(db, 'meetings', meeting.id);
+    await updateDoc(
+      ref,
+      open
+        ? { presensi_dibuka_at: serverTimestamp(), presensi_ditutup_at: null }
+        : { presensi_ditutup_at: serverTimestamp() }
+    );
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }
 
+// Daftar siswa kelas + status presensinya. Nama siswa diambil dari class_members
+// (disalin saat siswa bergabung), karena profil siswa lain tidak bisa dibaca langsung.
 export async function fetchMeetingRoster(classId, meetingId) {
-  const { data: memberships, error: memberError } = await supabase
-    .from('class_members')
-    .select('student_id')
-    .eq('class_id', classId);
-  if (memberError) return { data: null, error: memberError };
+  try {
+    const uid = auth.currentUser?.uid;
+    const [memberSnap, attendanceSnap] = await Promise.all([
+      getDocs(
+        query(
+          collection(db, 'class_members'),
+          where('class_id', '==', classId),
+          where('teacher_id', '==', uid)
+        )
+      ),
+      getDocs(
+        query(
+          collection(db, 'attendance'),
+          where('meeting_id', '==', meetingId),
+          where('teacher_id', '==', uid)
+        )
+      ),
+    ]);
 
-  const studentIds = [...new Set((memberships || []).map((row) => row.student_id).filter(Boolean))];
-  if (studentIds.length === 0) return { data: [], error: null };
+    const attendanceByStudent = {};
+    attendanceSnap.forEach((d) => {
+      const row = docToObject(d);
+      attendanceByStudent[row.student_id] = row;
+    });
 
-  const [profilesResult, attendanceResult] = await Promise.all([
-    supabase.from('profiles').select('id, nama_lengkap, nomor_induk').in('id', studentIds),
-    supabase.from('attendances').select('id, student_id, status, waktu_absen').eq('meeting_id', meetingId),
-  ]);
+    const data = memberSnap.docs
+      .map((d) => d.data())
+      .filter((m) => m.student_id)
+      .map((m) => ({
+        id: m.student_id,
+        nama_lengkap: m.student_nama || '',
+        nomor_induk: m.nomor_induk || '',
+        attendance: attendanceByStudent[m.student_id] || null,
+      }))
+      .sort((a, b) => (a.nama_lengkap || '').localeCompare(b.nama_lengkap || ''));
 
-  if (profilesResult.error) return { data: null, error: profilesResult.error };
-  if (attendanceResult.error) return { data: null, error: attendanceResult.error };
-
-  const attendanceByStudent = Object.fromEntries(
-    (attendanceResult.data || []).map((row) => [row.student_id, row])
-  );
-  return {
-    data: (profilesResult.data || [])
-      .map((student) => ({ ...student, attendance: attendanceByStudent[student.id] || null }))
-      .sort((a, b) => (a.nama_lengkap || '').localeCompare(b.nama_lengkap || '')),
-    error: null,
-  };
+    return { data, error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }
 
 export async function saveMeetingAttendance({ meetingId, studentId, status }) {
-  const { data, error } = await supabase
-    .from('attendances')
-    .upsert(
-      {
-        meeting_id: meetingId,
-        student_id: studentId,
-        status,
-        waktu_absen: new Date().toISOString(),
-      },
-      { onConflict: 'meeting_id,student_id' }
-    )
-    .select('id, meeting_id, student_id, status, waktu_absen')
-    .single();
-  return { data, error };
+  try {
+    const meeting = await getMeetingOrThrow(meetingId);
+    const ref = doc(db, 'attendance', `${meetingId}_${studentId}`);
+    await setDoc(ref, {
+      meeting_id: meetingId,
+      class_id: meeting.class_id,
+      teacher_id: meeting.teacher_id,
+      student_id: studentId,
+      status,
+      waktu_absen: serverTimestamp(),
+    });
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }
