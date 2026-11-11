@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react'; // Tambahkan useEffect
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AuthHeader from '../../components/AuthHeader';
@@ -7,6 +7,17 @@ import AppButton from '../../components/AppButton.js';
 import FormAlert from '../../components/FormAlert';
 import { useAuth } from '../../context/AuthContext';
 import { colors, radius } from '../../core/theme';
+
+// --- Impor tambahan untuk Google Sign-In ---
+import * as React from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { auth } from '../../core/firebase'; // Pastikan path ini benar mengarah ke konfigurasi Firebase-mu
+
+// Penting agar browser tertutup setelah proses auth selesai
+WebBrowser.maybeCompleteAuthSession();
+// -------------------------------------------
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -25,6 +36,34 @@ export default function LoginScreen({ navigation }) {
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // --- Logika Google Sign-In ---
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    webClientId: '742422030077-ejt3adiku0vq122pj9pinmlp3o11iasa.apps.googleusercontent.com',
+    clientId: '742422030077-antsaous4lmg0kkibq29v6sh43lhdgq3.apps.googleusercontent.com', 
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      const credential = GoogleAuthProvider.credential(id_token);
+      
+      setSubmitting(true);
+      setFormError('');
+      signInWithCredential(auth, credential)
+        .then(() => {
+          setSubmitting(false);
+          // Berhasil. AuthContext akan otomatis bereaksi.
+        })
+        .catch(err => {
+          setSubmitting(false);
+          setFormError('Gagal masuk dengan Google: ' + err.message);
+        });
+    } else if (response?.type === 'error' || response?.type === 'dismiss') {
+      setSubmitting(false);
+    }
+  }, [response]);
+  // ------------------------------
 
   const validate = () => {
     const e = {};
@@ -85,6 +124,26 @@ export default function LoginScreen({ navigation }) {
               onSubmitEditing={onSubmit}
             />
             <AppButton title="Masuk" onPress={onSubmit} loading={submitting} style={{ marginTop: 4 }} />
+            
+            {/* --- Tombol Google ditambahkan di sini --- */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 16 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+              <Text style={{ marginHorizontal: 12, color: colors.textFaint, fontSize: 13 }}>ATAU</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+            </View>
+
+            <AppButton 
+              title="Masuk dengan Google" 
+              variant="outline" // Asumsi komponen AppButton-mu mendukung properti variant
+              onPress={() => {
+                setSubmitting(true);
+                promptAsync();
+              }} 
+              disabled={!request}
+              loading={submitting && !formError}
+            />
+            {/* ------------------------------------------- */}
+
           </View>
 
           <View style={styles.footerRow}>
