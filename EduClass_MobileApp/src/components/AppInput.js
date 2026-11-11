@@ -8,6 +8,7 @@ const AppInput = forwardRef(function AppInput(
   { label, required, hint, error, icon, secureTextEntry, ...props },
   ref
 ) {
+  const { multiline, style: inputStyle, ...inputProps } = props;
   const [focused, setFocused] = useState(false);
   const [hidden, setHidden] = useState(!!secureTextEntry);
 
@@ -20,17 +21,18 @@ const AppInput = forwardRef(function AppInput(
           {hint ? <Text style={styles.hint}>  {hint}</Text> : null}
         </Text>
       ) : null}
-      <View style={[styles.field, focused && styles.focused, !!error && styles.errorBorder]}>
+      <View style={[styles.field, multiline && styles.multilineField, focused && styles.focused, !!error && styles.errorBorder]}>
         {icon ? <Ionicons name={icon} size={18} color={focused ? colors.primary : colors.textMuted} style={styles.icon} /> : null}
         <TextInput
           ref={ref}
-          style={styles.input}
+          style={[styles.input, multiline && styles.multilineInput, inputStyle]}
           placeholderTextColor={colors.textFaint}
           selectionColor={colors.primary}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           secureTextEntry={hidden}
-          {...props}
+          multiline={multiline}
+          {...inputProps}
         />
         {secureTextEntry ? (
           <Pressable onPress={() => setHidden((h) => !h)} hitSlop={12} accessibilityLabel={hidden ? 'Tampilkan password' : 'Sembunyikan password'}>
@@ -60,9 +62,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     minHeight: 52,
   },
+  multilineField: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    paddingVertical: 8,
+  },
   focused: { borderColor: colors.primary },
   errorBorder: { borderColor: colors.danger },
   icon: { marginRight: 10 },
   input: { flex: 1, color: colors.text, fontSize: 15, paddingVertical: 12 },
+  multilineInput: {
+    alignSelf: 'stretch',
+    width: '100%',
+    minWidth: 0,
+    minHeight: 96,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    textAlignVertical: 'top',
+  },
   error: { color: colors.danger, fontSize: 12.5, marginTop: 6 },
 });
