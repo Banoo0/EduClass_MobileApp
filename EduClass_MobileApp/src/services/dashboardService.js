@@ -1,112 +1,234 @@
-import dayjs from 'dayjs';
-import { namaHariIni } from '../utils/dateHelper';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
+import { auth, db } from '../core/firebase';
+import { deleteWhere, docToObject, toError } from '../core/firestoreHelpers';
 
-// ---------------------------------------------------------------------------
-// DATA DUMMY SEMENTARA
-// Dibuat relatif terhadap waktu sekarang supaya label "Hari ini/Besok" dan status
-// jadwal (aktif/mendatang/selesai) selalu terlihat kapan pun aplikasi dibuka.
-// Nama kolom masih perkiraan karena skema database belum ada di repo.
-// ---------------------------------------------------------------------------
+// =====================================================
+// STRUKTUR DATA FIRESTORE
+//   meetings   : {scheduleId}_{tanggal} -> { schedule_id, class_id, teacher_id, tanggal, topik, deskripsi,
+//                                           presensi_dibuka_at, presensi_ditutup_at, created_at }
+//   attendance : {meetingId}_{studentId} -> { meeting_id, class_id, teacher_id, student_id, status, waktu_absen }
+// ID dokumen gabungan menggantikan UNIQUE constraint di Supabase:
+// satu jadwal hanya punya satu pertemuan per tanggal, satu siswa satu presensi per pertemuan.
+// =====================================================
 
-// Timestamp UTC (ISO), seperti kolom timestamptz dari Supabase
-const tenggat = (tambahHari, jam) => dayjs().add(tambahHari, 'day').hour(jam).minute(0).second(0).millisecond(0).toISOString();
-
-// Tenggat pada hari ke-n minggu ini (0 = Senin), agar Progres Mingguan tidak kosong di awal minggu
-const tenggatMingguIni = (hariKe, jam) => dayjs().locale('id').startOf('week').add(hariKe, 'day').hour(jam).toISOString();
-
-// Jam dinding 'HH:mm:00', dibulatkan ke 5 menit (jadwal di sekitar tengah malam bisa terlihat aneh, wajar untuk dummy)
-const jamDariSekarang = (menit) => {
-  const t = dayjs().add(menit, 'minute');
-  return t.minute(Math.floor(t.minute() / 5) * 5).format('HH:mm:00');
-};
-
-const kelas = (nama_mapel, rombel, guru) => ({ nama_mapel, rombel, guru: { nama_lengkap: guru } });
-
-function buatDummySiswa() {
-  const jamTenggatHariIni = Math.min(dayjs().hour() + 2, 23);
-  return {
-    tugas: [
-      { id: 't1', judul: 'Latihan Soal Persamaan Linear Dua Variabel', keterangan: '4 Soal Esai', deadline: tenggat(0, jamTenggatHariIni), status_pengumpulan: null, kelas: kelas('Matematika', '9A', 'Pak Hendra') },
-      { id: 't2', judul: 'Analytical Exposition Essay Draft', keterangan: 'Min. 300 Kata', deadline: tenggat(1, 8), status_pengumpulan: null, kelas: kelas('Bahasa Inggris', '9C', 'Ms. Ratna') },
-      { id: 't3', judul: 'Laporan Praktikum Fotosintesis', keterangan: 'Format PDF', deadline: tenggat(3, 10), status_pengumpulan: null, kelas: kelas('IPA', '9C', 'Bu Sri') },
-      { id: 't4', judul: 'Peta Konsep Perdagangan Internasional', keterangan: 'Foto / Gambar', deadline: tenggat(5, 12), status_pengumpulan: null, kelas: kelas('IPS', '9C', 'Pak Budi') },
-      { id: 't5', judul: 'Kuis Bangun Ruang Sisi Lengkung', keterangan: '10 Pilihan Ganda', deadline: tenggatMingguIni(0, 20), status_pengumpulan: 'dikumpulkan', kelas: kelas('Matematika', '9A', 'Pak Hendra') },
-      { id: 't6', judul: 'Teks Eksplanasi Bencana Alam', keterangan: 'Min. 3 Paragraf', deadline: tenggatMingguIni(2, 20), status_pengumpulan: 'dikumpulkan', kelas: kelas('Bahasa Indonesia', '9C', 'Bu Wati') },
-      { id: 't7', judul: 'Sketsa Ragam Hias Nusantara', keterangan: 'Foto Karya', deadline: tenggatMingguIni(4, 15), status_pengumpulan: 'dikumpulkan', kelas: kelas('Seni Budaya', '9C', 'Pak Anton') },
-    ],
-    jadwal: [
-      { id: 'j1', hari: namaHariIni(), jam_mulai: jamDariSekarang(-180), jam_selesai: jamDariSekarang(-90), ruangan: 'Ruang Kelas 9C', kelas: kelas('Bahasa Inggris', '9C', 'Ms. Ratna') },
-      { id: 'j2', hari: namaHariIni(), jam_mulai: jamDariSekarang(-30), jam_selesai: jamDariSekarang(60), ruangan: 'Laboratorium Fisika 2', kelas: kelas('Fisika', '9C', 'Bu Sri') },
-      { id: 'j3', hari: namaHariIni(), jam_mulai: jamDariSekarang(75), jam_selesai: jamDariSekarang(165), ruangan: 'Ruang Kelas 9C', kelas: kelas('Matematika Dasar', '9A', 'Pak Hendra') },
-    ],
-  };
+async function getScheduleOrThrow(scheduleId) {
+  const snap = await getDoc(doc(db, 'schedules', scheduleId));
+  if (!snap.exists()) throw new Error('Jadwal tidak ditemukan.');
+  return docToObject(snap);
 }
 
-// `jumlah` pengumpulan untuk satu tugas: `mingguIni` di antaranya masuk minggu ini (sisanya minggu lalu),
-// dan `belumDinilai` pengumpulan terbaru belum diberi nilai.
-function buatPengumpulan(idTugas, jumlah, belumDinilai, mingguIni) {
-  const now = dayjs();
-  const awalMinggu = now.locale('id').startOf('week');
-  const rentang = now.diff(awalMinggu);
-  return Array.from({ length: jumlah }, (_, i) => ({
-    id: `${idTugas}-p${i + 1}`,
-    submitted_at: (i < mingguIni
-      ? now.subtract(Math.round((rentang * (i + 1)) / (mingguIni + 1)), 'millisecond')
-      : awalMinggu.subtract(i - mingguIni + 1, 'hour')
-    ).toISOString(),
-    nilai: i < belumDinilai ? null : 75 + (i % 25),
-  }));
+async function getMeetingOrThrow(meetingId) {
+  const snap = await getDoc(doc(db, 'meetings', meetingId));
+  if (!snap.exists()) throw new Error('Pertemuan tidak ditemukan.');
+  return docToObject(snap);
 }
 
-function buatDummyGuru() {
-  const jamTenggatHariIni = Math.min(dayjs().hour() + 2, 23);
-  const kelas9A = { nama_mapel: 'Matematika', rombel: '9A', jumlah_siswa: 32 };
-  const kelas9C = { nama_mapel: 'Matematika', rombel: '9C', jumlah_siswa: 30 };
-  return {
-    kelas: [{ id: 'k1', ...kelas9A }, { id: 'k2', ...kelas9C }],
-    jadwal: [
-      { id: 'j1', hari: namaHariIni(), jam_mulai: jamDariSekarang(-180), jam_selesai: jamDariSekarang(-90), ruangan: 'Ruang 204 • Lantai 2 Gedung A', kelas: kelas9C },
-      { id: 'j2', hari: namaHariIni(), jam_mulai: jamDariSekarang(-55), jam_selesai: jamDariSekarang(35), ruangan: 'Ruang 201 • Lantai 2 Gedung A', kelas: kelas9A },
-      { id: 'j3', hari: namaHariIni(), jam_mulai: jamDariSekarang(75), jam_selesai: jamDariSekarang(165), ruangan: 'Ruang 204 • Lantai 2 Gedung A', kelas: kelas9C },
-    ],
-    tugas: [
-      { id: 'g1', judul: 'Latihan Soal Persamaan Linear Dua Variabel', deadline: tenggat(0, jamTenggatHariIni), kelas: kelas9A, pengumpulan: buatPengumpulan('g1', 28, 3, 8) },
-      { id: 'g2', judul: 'Kuis Bangun Ruang Sisi Lengkung', deadline: tenggat(1, 8), kelas: kelas9C, pengumpulan: buatPengumpulan('g2', 20, 2, 6) },
-      { id: 'g3', judul: 'Proyek Statistika Data Kelas', deadline: tenggat(4, 10), kelas: kelas9A, pengumpulan: buatPengumpulan('g3', 6, 0, 6) },
-      // Tenggat sudah lewat dan semua sudah dinilai: tidak muncul di daftar Beranda
-      { id: 'g4', judul: 'Ulangan Harian Pola Bilangan', deadline: tenggat(-3, 10), kelas: kelas9C, pengumpulan: buatPengumpulan('g4', 30, 0, 0) },
-    ],
-  };
+export async function fetchScheduleMeetings(scheduleId) {
+  try {
+    const schedule = await getScheduleOrThrow(scheduleId);
+    const uid = auth.currentUser?.uid;
+
+    const filters = [
+      where('class_id', '==', schedule.class_id),
+      where('schedule_id', '==', scheduleId),
+    ];
+    // Guru pemilik jadwal cukup membuktikan lewat teacher_id; siswa lewat keanggotaan kelas.
+    if (schedule.teacher_id === uid) filters.push(where('teacher_id', '==', uid));
+
+    const snap = await getDocs(query(collection(db, 'meetings'), ...filters));
+    const data = snap.docs
+      .map(docToObject)
+      .sort((a, b) => String(b.tanggal || '').localeCompare(String(a.tanggal || '')));
+    return { data, error: null };
+  } catch (e) {
+    return { data: [], error: toError(e) };
+  }
 }
 
-const simulasiJeda = () => new Promise((resolve) => setTimeout(resolve, 500));
+export async function createMeeting({ scheduleId, tanggal, topik, deskripsi }) {
+  try {
+    const schedule = await getScheduleOrThrow(scheduleId);
+    const tanggalKey = String(tanggal).slice(0, 10); // YYYY-MM-DD
+    const ref = doc(db, 'meetings', `${scheduleId}_${tanggalKey}`);
 
-// Data Beranda siswa: semua tugas di kelas yang diikuti (+ status pengumpulan milik siswa)
-// dan jadwal hari ini. Angka ringkasan dihitung di layar.
-// Bentuk data:
-//   tugas:  [{ id, judul, keterangan, deadline (ISO UTC), status_pengumpulan (null | 'dikumpulkan'),
-//              kelas: { nama_mapel, rombel, guru: { nama_lengkap } } }]
-//   jadwal: [{ id, hari ('Senin'), jam_mulai ('07:30:00'), jam_selesai, ruangan,
-//              kelas: { nama_mapel, rombel, guru: { nama_lengkap } } }]
-export async function getStudentDashboard() {
-  // TODO: ganti dengan query Supabase (tugas + submissions milik siswa, jadwal .eq('hari', namaHariIni()))
-  // dan kembalikan error dari Supabase apa adanya, seperti authServices.js.
-  await simulasiJeda();
-  const data = buatDummySiswa();
-  return { data: { ...data, jadwal: data.jadwal.filter((j) => j.hari === namaHariIni()) }, error: null };
+    if ((await getDoc(ref)).exists()) {
+      return { data: null, error: new Error('Pertemuan pada tanggal ini sudah ada.') };
+    }
+
+    await setDoc(ref, {
+      schedule_id: scheduleId,
+      class_id: schedule.class_id,
+      teacher_id: schedule.teacher_id,
+      tanggal,
+      topik: (topik || '').trim(),
+      deskripsi: (deskripsi || '').trim(),
+      presensi_dibuka_at: null,
+      presensi_ditutup_at: null,
+      created_at: serverTimestamp(),
+    });
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
 }
 
-// Data Beranda guru: kelas yang diajar, jadwal mengajar hari ini, dan tugas buatan guru
-// beserta pengumpulannya. Angka ringkasan dihitung di layar.
-// Bentuk data:
-//   kelas:  [{ id, nama_mapel, rombel, jumlah_siswa }]
-//   jadwal: [{ id, hari, jam_mulai, jam_selesai, ruangan, kelas: { nama_mapel, rombel } }]
-//   tugas:  [{ id, judul, deadline (ISO UTC), kelas: { nama_mapel, rombel, jumlah_siswa },
-//              pengumpulan: [{ id, submitted_at (ISO UTC), nilai (null = belum dinilai) }] }]
-export async function getTeacherDashboard() {
-  // TODO: ganti dengan query Supabase (kelas milik guru, jadwal .eq('hari', namaHariIni()),
-  // tugas + submissions) dan kembalikan error dari Supabase apa adanya.
-  await simulasiJeda();
-  const data = buatDummyGuru();
-  return { data: { ...data, jadwal: data.jadwal.filter((j) => j.hari === namaHariIni()) }, error: null };
+export async function updateMeeting({ meetingId, tanggal, topik, deskripsi }) {
+  try {
+    const ref = doc(db, 'meetings', meetingId);
+    await updateDoc(ref, {
+      tanggal,
+      topik: (topik || '').trim(),
+      deskripsi: (deskripsi || '').trim(),
+    });
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
+}
+
+export async function deleteMeeting(meetingId) {
+  try {
+    const meeting = await getMeetingOrThrow(meetingId);
+    await deleteWhere('attendance', [
+      ['meeting_id', meetingId],
+      ['teacher_id', meeting.teacher_id],
+    ]);
+    await deleteDoc(doc(db, 'meetings', meetingId));
+    return { data: { id: meetingId }, error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
+}
+
+export async function setMeetingAttendanceOpen(meeting, open) {
+  try {
+    const ref = doc(db, 'meetings', meeting.id);
+    await updateDoc(
+      ref,
+      open
+        ? { presensi_dibuka_at: serverTimestamp(), presensi_ditutup_at: null }
+        : { presensi_ditutup_at: serverTimestamp() }
+    );
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
+}
+
+// Daftar siswa kelas + status presensinya. Nama siswa diambil dari class_members
+// (disalin saat siswa bergabung), karena profil siswa lain tidak bisa dibaca langsung.
+export async function fetchMeetingRoster(classId, meetingId) {
+  try {
+    const uid = auth.currentUser?.uid;
+    const [memberSnap, attendanceSnap] = await Promise.all([
+      getDocs(
+        query(
+          collection(db, 'class_members'),
+          where('class_id', '==', classId),
+          where('teacher_id', '==', uid)
+        )
+      ),
+      getDocs(
+        query(
+          collection(db, 'attendance'),
+          where('meeting_id', '==', meetingId),
+          where('teacher_id', '==', uid)
+        )
+      ),
+    ]);
+
+    const attendanceByStudent = {};
+    attendanceSnap.forEach((d) => {
+      const row = docToObject(d);
+      attendanceByStudent[row.student_id] = row;
+    });
+
+    const data = memberSnap.docs
+      .map((d) => d.data())
+      .filter((m) => m.student_id)
+      .map((m) => ({
+        id: m.student_id,
+        nama_lengkap: m.student_nama || '',
+        nomor_induk: m.nomor_induk || '',
+        attendance: attendanceByStudent[m.student_id] || null,
+      }))
+      .sort((a, b) => (a.nama_lengkap || '').localeCompare(b.nama_lengkap || ''));
+
+    return { data, error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
+}
+
+export async function saveMeetingAttendance({ meetingId, studentId, status }) {
+  try {
+    const meeting = await getMeetingOrThrow(meetingId);
+    const ref = doc(db, 'attendance', `${meetingId}_${studentId}`);
+    await setDoc(ref, {
+      meeting_id: meetingId,
+      class_id: meeting.class_id,
+      teacher_id: meeting.teacher_id,
+      student_id: studentId,
+      status,
+      waktu_absen: serverTimestamp(),
+    });
+    return { data: docToObject(await getDoc(ref)), error: null };
+  } catch (e) {
+    return { data: null, error: toError(e) };
+  }
+}
+
+// Pertemuan minggu ini + presensi milik siswa, untuk layar Jadwal siswa.
+// Query per kelas (filter class_id dibutuhkan aturan keamanan), lalu disaring di aplikasi.
+export async function fetchStudentWeekMeetings({ studentId, schedules, weekStartKey, weekEndKey }) {
+  const empty = { meetings: [], attendanceMap: {} };
+  try {
+    const scheduleIds = new Set((schedules || []).map((item) => item.id).filter(Boolean));
+    const classIds = [...new Set((schedules || []).map((item) => item.class_id).filter(Boolean))];
+    if (!scheduleIds.size || !classIds.length) return { data: empty, error: null };
+
+    const meetingSnaps = await Promise.all(
+      classIds.map((classId) =>
+        getDocs(query(collection(db, 'meetings'), where('class_id', '==', classId)))
+      )
+    );
+    const meetings = meetingSnaps
+      .flatMap((snap) => snap.docs.map(docToObject))
+      .filter((m) => {
+        const key = String(m.tanggal || '').slice(0, 10);
+        return scheduleIds.has(m.schedule_id) && key >= weekStartKey && key <= weekEndKey;
+      });
+
+    const attendanceMap = {};
+    const meetingIds = meetings.map((m) => m.id);
+    for (let i = 0; i < meetingIds.length; i += 30) {
+      // eslint-disable-next-line no-await-in-loop
+      const snap = await getDocs(
+        query(
+          collection(db, 'attendance'),
+          where('student_id', '==', studentId),
+          where('meeting_id', 'in', meetingIds.slice(i, i + 30))
+        )
+      );
+      snap.forEach((d) => {
+        const row = docToObject(d);
+        attendanceMap[row.meeting_id] = row;
+      });
+    }
+
+    return { data: { meetings, attendanceMap }, error: null };
+  } catch (e) {
+    return { data: empty, error: toError(e) };
+  }
 }

@@ -188,3 +188,47 @@ export async function saveMeetingAttendance({ meetingId, studentId, status }) {
     return { data: null, error: toError(e) };
   }
 }
+
+// Pertemuan minggu ini + presensi milik siswa, untuk layar Jadwal siswa.
+// Query per kelas (filter class_id dibutuhkan aturan keamanan), lalu disaring di aplikasi.
+export async function fetchStudentWeekMeetings({ studentId, schedules, weekStartKey, weekEndKey }) {
+  const empty = { meetings: [], attendanceMap: {} };
+  try {
+    const scheduleIds = new Set((schedules || []).map((item) => item.id).filter(Boolean));
+    const classIds = [...new Set((schedules || []).map((item) => item.class_id).filter(Boolean))];
+    if (!scheduleIds.size || !classIds.length) return { data: empty, error: null };
+
+    const meetingSnaps = await Promise.all(
+      classIds.map((classId) =>
+        getDocs(query(collection(db, 'meetings'), where('class_id', '==', classId)))
+      )
+    );
+    const meetings = meetingSnaps
+      .flatMap((snap) => snap.docs.map(docToObject))
+      .filter((m) => {
+        const key = String(m.tanggal || '').slice(0, 10);
+        return scheduleIds.has(m.schedule_id) && key >= weekStartKey && key <= weekEndKey;
+      });
+
+    const attendanceMap = {};
+    const meetingIds = meetings.map((m) => m.id);
+    for (let i = 0; i < meetingIds.length; i += 30) {
+      // eslint-disable-next-line no-await-in-loop
+      const snap = await getDocs(
+        query(
+          collection(db, 'attendance'),
+          where('student_id', '==', studentId),
+          where('meeting_id', 'in', meetingIds.slice(i, i + 30))
+        )
+      );
+      snap.forEach((d) => {
+        const row = docToObject(d);
+        attendanceMap[row.meeting_id] = row;
+      });
+    }
+
+    return { data: { meetings, attendanceMap }, error: null };
+  } catch (e) {
+    return { data: empty, error: toError(e) };
+  }
+}

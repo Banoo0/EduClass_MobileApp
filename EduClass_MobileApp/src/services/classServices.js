@@ -508,7 +508,10 @@ export async function fetchStudentSchedules(studentId) {
     if (error) return { data: null, error };
 
     const classMap = Object.fromEntries(
-      classes.map((c) => [c.id, { id: c.id, nama_mapel: c.nama_mapel, rombel: c.rombel }])
+      classes.map((c) => [
+        c.id,
+        { id: c.id, nama_mapel: c.nama_mapel, rombel: c.rombel, teacher_nama: c.teacher_nama || null },
+      ])
     );
 
     const data = Object.values(byClass)

@@ -1,4 +1,3 @@
-
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -21,7 +20,7 @@ import FormAlert from '../../components/FormAlert';
 
 import { useAuth } from '../../context/AuthContext';
 import { fetchStudentSchedules } from '../../services/classServices';
-import { supabase } from '../../core/supabase';
+import { fetchStudentWeekMeetings } from '../../services/meetingService';
 
 import {
   colors,
@@ -337,85 +336,23 @@ export default function JadwalScreen({ navigation }) {
 
       setSchedules(rows);
 
-      // Nama guru bersifat data tambahan.
-      // Jika RLS membatasi pembacaan profiles, jadwal tetap tampil.
-      const teacherIds = [
-        ...new Set(rows.map((item) => item.teacher_id).filter(Boolean)),
-      ];
-
-      let nextTeacherMap = {};
-
-      if (teacherIds.length > 0) {
-        const { data: teachers, error: teacherError } =
-          await supabase
-            .from('profiles')
-            .select('id, nama_lengkap')
-            .in('id', teacherIds);
-
-        if (!teacherError && teachers) {
-          nextTeacherMap = Object.fromEntries(
-            teachers.map((item) => [
-              item.id,
-              item.nama_lengkap,
-            ])
-          );
-        }
-      }
-
+      // Nama guru sudah ikut di data jadwal (classes.teacher_nama).
+      const nextTeacherMap = Object.fromEntries(
+        rows
+          .filter((item) => item.teacher_id)
+          .map((item) => [item.teacher_id, item.classes?.teacher_nama || ''])
+      );
       setTeacherMap(nextTeacherMap);
 
-      // Pertemuan dan presensi berasal dari tabel yang sudah ada.
-      // Kegagalan membaca keduanya tidak menghilangkan jadwal pelajaran.
-      const scheduleIds = rows.map((item) => item.id).filter(Boolean);
-
-      let nextMeetings = [];
-      let nextAttendanceMap = {};
-
-      if (scheduleIds.length > 0) {
-        const { data: meetingRows, error: meetingError } =
-          await supabase
-            .from('meetings')
-            .select(`
-              id,
-              schedule_id,
-              tanggal,
-              topik,
-              presensi_dibuka_at,
-              presensi_ditutup_at
-            `)
-            .in('schedule_id', scheduleIds)
-            .gte('tanggal', weekStartKey)
-            .lte('tanggal', weekEndKey);
-
-        if (!meetingError && meetingRows) {
-          nextMeetings = meetingRows;
-
-          const meetingIds = meetingRows
-            .map((item) => item.id)
-            .filter(Boolean);
-
-          if (meetingIds.length > 0) {
-            const { data: attendanceRows, error: attendanceError } =
-              await supabase
-                .from('attendances')
-                .select('id, meeting_id, status')
-                .eq('student_id', studentId)
-                .in('meeting_id', meetingIds);
-
-            if (!attendanceError && attendanceRows) {
-              nextAttendanceMap = Object.fromEntries(
-                attendanceRows.map((item) => [
-                  item.meeting_id,
-                  item,
-                ])
-              );
-            }
-          }
-        }
-      }
-
-      setMeetings(nextMeetings);
-      setAttendanceMap(nextAttendanceMap);
+      // Pertemuan dan presensi: kegagalan membaca keduanya tidak menghilangkan jadwal.
+      const { data: weekData } = await fetchStudentWeekMeetings({
+        studentId,
+        schedules: rows,
+        weekStartKey,
+        weekEndKey,
+      });
+      setMeetings(weekData?.meetings || []);
+      setAttendanceMap(weekData?.attendanceMap || {});
     } catch (err) {
       setError(err.message || 'Gagal memuat jadwal pelajaran.');
     } finally {
