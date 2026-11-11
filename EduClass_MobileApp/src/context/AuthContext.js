@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { AppState } from 'react-native';
-import { supabase } from '../core/supabase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../core/firebase';
 import { fetchProfile, signInWithEmail, signOutUser, signUpWithEmail } from '../services/authServices';
 
 const AuthContext = createContext(null);
@@ -14,44 +14,21 @@ function profileToState(id, { data, error }) {
 }
 
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(null);
-  const [sessionReady, setSessionReady] = useState(false);
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [profileState, setProfileState] = useState({ id: null, data: null, error: null });
 
-  // 1. Baca sesi tersimpan, lalu pantau perubahan login/logout
+  // 1. Pantau status login (sesi tersimpan otomatis dipulihkan oleh Firebase)
   useEffect(() => {
-    let active = true;
-    supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        if (!active) return;
-        setSession(data.session);
-        setSessionReady(true);
-      })
-      .catch(() => active && setSessionReady(true));
-
-    // Jangan memanggil Supabase lain di dalam callback ini, cukup simpan sesinya
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      setSessionReady(true);
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthReady(true);
     });
-    return () => {
-      active = false;
-      sub.subscription.unsubscribe();
-    };
+    return unsubscribe;
   }, []);
 
-  // 2. Perpanjang token otomatis hanya saat aplikasi aktif
-  useEffect(() => {
-    const listener = AppState.addEventListener('change', (state) => {
-      if (state === 'active') supabase.auth.startAutoRefresh();
-      else supabase.auth.stopAutoRefresh();
-    });
-    return () => listener.remove();
-  }, []);
-
-  // 3. Ambil profil (berisi role) setiap kali pengguna berganti
-  const userId = session?.user?.id ?? null;
+  // 2. Ambil profil (berisi role) setiap kali pengguna berganti
+  const userId = user?.uid ?? null;
   useEffect(() => {
     if (!userId) {
       setProfileState({ id: null, data: null, error: null });
@@ -71,13 +48,13 @@ export function AuthProvider({ children }) {
     setProfileState(profileToState(userId, await fetchProfile(userId)));
   }, [userId]);
 
-  const loading = !sessionReady || (userId !== null && profileState.id !== userId);
+  const loading = !authReady || (userId !== null && profileState.id !== userId);
   const profile = profileState.id === userId ? profileState.data : null;
 
   const value = useMemo(
     () => ({
-      session,
-      user: session?.user ?? null,
+      session: user, // nama lama dipertahankan supaya RootNavigator tidak perlu diubah
+      user,
       profile,
       role: profile?.role ?? null,
       profileError: profileState.error,
@@ -87,7 +64,7 @@ export function AuthProvider({ children }) {
       signOut: signOutUser,
       refreshProfile,
     }),
-    [session, profile, profileState.error, loading, refreshProfile]
+    [user, profile, profileState.error, loading, refreshProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

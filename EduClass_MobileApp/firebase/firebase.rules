@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Daftar sekolah boleh dibaca siapa saja (form register), tidak bisa diubah dari aplikasi
+    match /schools/{schoolId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Profil: hanya pemiliknya. Role ditentukan saat daftar dan tidak bisa diubah.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.role in ['guru', 'siswa']
+        && request.resource.data.nama_lengkap is string
+        && request.resource.data.nama_lengkap.size() >= 3
+        && request.resource.data.keys().hasOnly(
+             ['nama_lengkap', 'role', 'nomor_induk', 'rombel', 'school_id', 'school_nama', 'created_at']);
+
+      allow update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role;
+
+      allow delete: if false;
+    }
+
+    // Koleksi lain (kelas, jadwal, tugas) ditambahkan di tahap berikutnya.
+    // Selama belum ada aturannya, semuanya otomatis ditolak.
+  }
+}

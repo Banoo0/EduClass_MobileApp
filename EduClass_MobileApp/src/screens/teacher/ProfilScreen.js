@@ -1,4 +1,4 @@
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AppButton from '../../components/AppButton.js';
@@ -16,11 +16,28 @@ export default function ProfilScreen() {
     { icon: 'business-outline', label: 'Sekolah', value: profile?.school?.nama_sekolah },
   ];
 
-  const confirmLogout = () =>
+  const handleSignOut = async () => {
+    const { error } = await signOut();
+    if (error) {
+      const msg = 'Gagal keluar dari akun. Coba lagi.';
+      if (Platform.OS === 'web') window.alert(msg);
+      else Alert.alert('Gagal', msg);
+    }
+  };
+
+  const confirmLogout = () => {
+    // Alert.alert tidak berfungsi di web, jadi pakai konfirmasi bawaan browser.
+    if (Platform.OS === 'web') {
+      if (window.confirm('Keluar dari akun?\n\nKamu perlu masuk lagi untuk membuka EduClass.')) {
+        handleSignOut();
+      }
+      return;
+    }
     Alert.alert('Keluar dari akun?', 'Kamu perlu masuk lagi untuk membuka EduClass.', [
       { text: 'Batal', style: 'cancel' },
-      { text: 'Keluar', style: 'destructive', onPress: () => signOut() },
+      { text: 'Keluar', style: 'destructive', onPress: handleSignOut },
     ]);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
