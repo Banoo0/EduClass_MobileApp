@@ -268,7 +268,7 @@ function DayPicker({ value, onChange }) {
 
 export default function KelolaKelasScreen({ navigation }) {
   const { user, profile } = useAuth();
-  const teacherId = user?.id || profile?.id;
+  const teacherId = user?.uid || user?.id || profile?.id;
 
   const academicTerm = getCurrentAcademicTerm();
 
@@ -394,21 +394,12 @@ export default function KelolaKelasScreen({ navigation }) {
   };
 
   // ===================================================
-  // BUAT KELAS DAN JADWAL
+  // BUAT KELAS
   // ===================================================
 
   const handleCreateClass = async () => {
     if (!namaMapel.trim()) {
       setError('Nama mata pelajaran wajib diisi.');
-      return;
-    }
-
-    if (
-      !TIME_PATTERN.test(jamMulai) ||
-      !TIME_PATTERN.test(jamSelesai) ||
-      jamSelesai <= jamMulai
-    ) {
-      setError('Periksa format dan urutan jam pelajaran.');
       return;
     }
 
@@ -427,11 +418,6 @@ export default function KelolaKelasScreen({ navigation }) {
         rombel,
         tahun_ajaran: tahunAjaran,
         semester,
-        hari,
-        jam_mulai: jamMulai,
-        jam_selesai: jamSelesai,
-        ruang,
-        gedung,
       });
 
       if (result.error) {
@@ -444,20 +430,11 @@ export default function KelolaKelasScreen({ navigation }) {
 
       await loadClasses(true);
 
-      if (result.scheduleError) {
-        notify(
-          'Kelas berhasil dibuat',
-          `Token: ${result.data?.token || 'Tidak tersedia'}\n\n` +
-          `Jadwal belum tersimpan: ${result.scheduleError.message}\n\n` +
-          'Buka kartu kelas untuk melengkapi jadwal.'
-        );
-      } else {
-        notify(
-          'Kelas berhasil dibuat',
-          `Token kelas: ${result.data?.token || 'Tidak tersedia'}\n\n` +
-          'Kelas beserta jadwal pertamanya berhasil disimpan.'
-        );
-      }
+      notify(
+        'Kelas berhasil dibuat',
+        `Token kelas: ${result.data?.token || 'Tidak tersedia'}\n\n` +
+        'Tambahkan jadwal melalui menu Daftar Pertemuan.'
+      );
     } catch (err) {
       setError(err.message || 'Gagal membuat kelas.');
     } finally {
@@ -1080,8 +1057,32 @@ export default function KelolaKelasScreen({ navigation }) {
             <View style={styles.divider} />
 
             <View style={styles.inlineSectionHeading}>
+              <Text style={styles.detailHeading}>Daftar Pertemuan</Text>
+              <Pressable
+                onPress={() => navigation.navigate('KelolaPertemuan', {
+                  classId: item.id,
+                  className: `${item.nama_mapel || 'Kelas'}${item.rombel ? ` ${item.rombel}` : ''}`,
+                  semester: item.semester,
+                  tahunAjaran: item.tahun_ajaran,
+                  jumlahSiswa: item.jumlah_siswa,
+                })}
+                style={styles.addScheduleButton}
+                accessibilityRole="button"
+                accessibilityLabel="Kelola daftar pertemuan"
+              >
+                <Ionicons name="clipboard-outline" size={18} color={colors.primary} />
+                <Text style={styles.addScheduleText}>Kelola</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.emptyScheduleText}>
+              Tambahkan pertemuan satu per satu, lengkap dengan tanggal dan jam.
+            </Text>
+
+            <View style={styles.divider} />
+
+            <View style={styles.inlineSectionHeading}>
               <Text style={styles.detailHeading}>
-                Jadwal Pelajaran
+                Jadwal Mingguan (Opsional)
               </Text>
 
               <Pressable
@@ -1126,19 +1127,6 @@ export default function KelolaKelasScreen({ navigation }) {
                       {getLocation(schedule)}
                     </Text>
                   </View>
-
-                  <Pressable
-                    onPress={() => navigation.navigate('KelolaPertemuan', {
-                      schedule,
-                      classId: item.id,
-                      className: `${item.nama_mapel || 'Kelas'}${item.rombel ? ` ${item.rombel}` : ''}`,
-                    })}
-                    style={styles.scheduleAction}
-                    accessibilityRole="button"
-                    accessibilityLabel="Kelola pertemuan"
-                  >
-                    <Ionicons name="clipboard-outline" size={20} color={colors.primary} />
-                  </Pressable>
 
                   <Pressable
                     onPress={() => startEditing(item, schedule)}
@@ -1291,8 +1279,7 @@ export default function KelolaKelasScreen({ navigation }) {
             </View>
 
             <Text style={styles.formDescription}>
-              Masukkan informasi kelas dan jadwal pelajaran pertama.
-              Token akan dibuat otomatis oleh database.
+              Isi informasi kelas terlebih dahulu. Jadwal ditentukan saat kamu menambahkan pertemuan.
             </Text>
 
             <AppInput
@@ -1330,63 +1317,11 @@ export default function KelolaKelasScreen({ navigation }) {
               </View>
             </View>
 
-            <View style={styles.divider} />
-
-            <Text style={styles.inlineSectionTitle}>
-              Jadwal Pelajaran Pertama
-            </Text>
-
-            <Text style={styles.fieldLabel}>Hari</Text>
-
-            <DayPicker value={hari} onChange={setHari} />
-
-            <View style={styles.timeRow}>
-              <View style={styles.timeField}>
-                <AppInput
-                  label="Jam Mulai"
-                  required
-                  value={jamMulai}
-                  onChangeText={setJamMulai}
-                  placeholder="07:00"
-                />
-              </View>
-
-              <View style={styles.timeField}>
-                <AppInput
-                  label="Jam Selesai"
-                  required
-                  value={jamSelesai}
-                  onChangeText={setJamSelesai}
-                  placeholder="08:30"
-                />
-              </View>
-            </View>
-
-            <AppInput
-              label="Ruang"
-              placeholder="Contoh: Ruang 201"
-              value={ruang}
-              onChangeText={setRuang}
-            />
-
-            <AppInput
-              label="Gedung"
-              placeholder="Contoh: Gedung A"
-              value={gedung}
-              onChangeText={setGedung}
-            />
-
             <AppButton
-              title="Simpan Kelas & Jadwal"
+              title="Simpan Kelas"
               icon="checkmark-circle-outline"
               loading={submitting}
-              disabled={
-                submitting ||
-                !namaMapel.trim() ||
-                !TIME_PATTERN.test(jamMulai) ||
-                !TIME_PATTERN.test(jamSelesai) ||
-                jamSelesai <= jamMulai
-              }
+              disabled={submitting || !namaMapel.trim()}
               onPress={handleCreateClass}
             />
           </View>
@@ -1424,9 +1359,9 @@ export default function KelolaKelasScreen({ navigation }) {
 
             <Text style={styles.emptyTitle}>Belum Ada Kelas</Text>
 
-            <Text style={styles.emptyDescription}>
-              Tekan Buat Kelas untuk menambahkan kelas dan jadwal pertama.
-            </Text>
+              <Text style={styles.emptyDescription}>
+                Tekan Buat Kelas untuk menambahkan kelas. Jadwal pertemuan bisa ditambahkan setelahnya.
+              </Text>
           </View>
         ) : (
           <View style={styles.classList}>

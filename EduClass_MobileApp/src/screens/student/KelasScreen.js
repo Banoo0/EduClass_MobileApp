@@ -87,7 +87,7 @@ function getSubjectIcon(subject = '') {
 
 export default function KelasScreen({ navigation }) {
   const { user, profile } = useAuth();
-  const studentId = user?.id || profile?.id;
+  const studentId = user?.uid || user?.id || profile?.id;
 
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -494,8 +494,31 @@ export default function KelasScreen({ navigation }) {
 
                       <View style={styles.detailDivider} />
 
+                      <View style={styles.inlineSectionHeading}>
+                        <Text style={styles.detailSectionTitle}>Daftar Pertemuan</Text>
+                        <Pressable
+                          onPress={() => navigation.navigate('DaftarPertemuan', {
+                            classId: item.id,
+                            className: `${item.nama_mapel || 'Kelas'}${item.rombel ? ` ${item.rombel}` : ''}`,
+                            semester: item.semester,
+                            tahunAjaran: item.tahun_ajaran,
+                          })}
+                          style={styles.meetingsButton}
+                          accessibilityRole="button"
+                        >
+                          <Ionicons name="list-outline" size={17} color="#FFFFFF" />
+                          <Text style={styles.meetingsButtonText}>Lihat Pertemuan</Text>
+                        </Pressable>
+                      </View>
+
+                      <Text style={styles.noSchedule}>
+                        Lihat topik, tanggal, dan waktu setiap pertemuan kelas.
+                      </Text>
+
+                      <View style={styles.detailDivider} />
+
                       <Text style={styles.detailSectionTitle}>
-                        Jadwal Pelajaran
+                        Jadwal Mingguan (Opsional)
                       </Text>
 
                       {schedules.length ? (
@@ -938,6 +961,31 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: fontWeight.bold,
     marginBottom: spacing.sm,
+  },
+
+  inlineSectionHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+
+  meetingsButton: {
+    minHeight: 38,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+
+  meetingsButtonText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
   },
 
   scheduleItem: {

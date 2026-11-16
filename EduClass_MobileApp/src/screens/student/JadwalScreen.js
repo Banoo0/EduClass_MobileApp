@@ -375,15 +375,17 @@ export default function JadwalScreen({ navigation }) {
     (item) => normalizeDay(item.hari) === normalizeDay(today)
   );
 
-  const selectedSchedules = schedules
-    .filter(
-      (item) => normalizeDay(item.hari) === normalizeDay(selectedDay)
-    )
-    .sort((a, b) =>
-      String(a.jam_mulai || '').localeCompare(
-        String(b.jam_mulai || '')
-      )
-    );
+  const selectedMeetings = meetings
+    .filter((item) => String(item.tanggal || '').slice(0, 10) === selectedDateKey)
+    .map((item) => ({ ...item, isMeeting: true }));
+  const selectedMeetingClassIds = new Set(selectedMeetings.map((item) => item.class_id));
+  const selectedSchedules = [
+    ...schedules.filter((item) =>
+      normalizeDay(item.hari) === normalizeDay(selectedDay) &&
+      !selectedMeetingClassIds.has(item.class_id)
+    ),
+    ...selectedMeetings,
+  ].sort((a, b) => String(a.jam_mulai || '').localeCompare(String(b.jam_mulai || '')));
 
   const totalDuration = schedules.reduce(
     (total, item) => total + durationMinutes(item),
@@ -615,7 +617,7 @@ export default function JadwalScreen({ navigation }) {
 
               const meeting = meetings.find(
                 (row) =>
-                  row.schedule_id === item.id &&
+                  (row.schedule_id === item.id || row.id === item.id) &&
                   row.tanggal === selectedDateKey
               );
 

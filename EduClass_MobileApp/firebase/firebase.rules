@@ -2,6 +2,34 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isTeacher() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guru';
+    }
+
+    function isStudent() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'siswa';
+    }
+
+    function ownsClass(classId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/classes/$(classId))
+        && get(/databases/$(database)/documents/classes/$(classId)).data.teacher_id == request.auth.uid;
+    }
+
+    function isClassMember(classId, studentId) {
+      return exists(/databases/$(database)/documents/class_members/$(classId + '_' + studentId));
+    }
+
+    function canReadClass(classId) {
+      return ownsClass(classId) || isClassMember(classId, request.auth.uid);
+    }
+
     // Daftar sekolah boleh dibaca siapa saja (form register), tidak bisa diubah dari aplikasi
     match /schools/{schoolId} {
       allow read: if true;
@@ -27,7 +55,99 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Koleksi lain (kelas, jadwal, tugas) ditambahkan di tahap berikutnya.
-    // Selama belum ada aturannya, semuanya otomatis ditolak.
+    match /classes/{classId} {
+      allow read: if canReadClass(classId);
+      allow create: if isTeacher()
+        && request.resource.data.teacher_id == request.auth.uid;
+      allow update: if ownsClass(classId)
+        && request.resource.data.teacher_id == resource.data.teacher_id;
+      allow delete: if ownsClass(classId);
+    }
+
+    match /class_tokens/{token} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if isTeacher()
+        && request.resource.data.teacher_id == request.auth.uid
+        && getAfter(/databases/$(database)/documents/classes/$(request.resource.data.class_id)).data.teacher_id == request.auth.uid;
+      allow update: if ownsClass(resource.data.class_id)
+        && request.resource.data.teacher_id == resource.data.teacher_id
+        && request.resource.data.class_id == resource.data.class_id;
+      allow delete: if ownsClass(resource.data.class_id);
+    }
+
+    match /class_members/{membershipId} {
+      allow read: if signedIn()
+        && (resource.data.student_id == request.auth.uid || resource.data.teacher_id == request.auth.uid);
+      allow create: if isStudent()
+        && request.resource.data.student_id == request.auth.uid
+        && get(/databases/$(database)/documents/class_tokens/$(request.resource.data.token)).data.class_id == request.resource.data.class_id
+        && get(/databases/$(database)/documents/class_tokens/$(request.resource.data.token)).data.aktif != false
+        && get(/databases/$(database)/documents/classes/$(request.resource.data.class_id)).data.teacher_id == request.resource.data.teacher_id;
+      allow update: if ownsClass(resource.data.class_id)
+        && request.resource.data.class_id == resource.data.class_id
+        && request.resource.data.teacher_id == resource.data.teacher_id
+        && request.resource.data.student_id == resource.data.student_id;
+      allow delete: if signedIn()
+        && (resource.data.teacher_id == request.auth.uid || resource.data.student_id == request.auth.uid);
+    }
+
+    match /schedules/{scheduleId} {
+      allow read: if signedIn()
+        && (resource.data.teacher_id == request.auth.uid
+          || (resource.data.class_id != null && isClassMember(resource.data.class_id, request.auth.uid)));
+      allow create: if isTeacher()
+        && request.resource.data.teacher_id == request.auth.uid
+        && (request.resource.data.class_id == null || ownsClass(request.resource.data.class_id));
+      allow update: if signedIn()
+        && resource.data.teacher_id == request.auth.uid
+        && request.resource.data.teacher_id == request.auth.uid
+        && (request.resource.data.class_id == null || ownsClass(request.resource.data.class_id));
+      allow delete: if signedIn() && resource.data.teacher_id == request.auth.uid;
+    }
+
+    match /meetings/{meetingId} {
+      // Transaksi createMeeting perlu membaca ID target untuk memastikan
+      // nomor pertemuan belum dipakai. Guru hanya boleh get dokumen yang belum ada;
+      // dokumen yang sudah ada tetap dibatasi berdasarkan akses kelas.
+      allow get: if resource == null
+        ? isTeacher()
+        : signedIn() && canReadClass(resource.data.class_id);
+      allow list: if signedIn() && canReadClass(resource.data.class_id);
+      allow create: if isTeacher()
+        && request.resource.data.teacher_id == request.auth.uid
+        && ownsClass(request.resource.data.class_id)
+        && request.resource.data.pertemuan_ke is int
+        && request.resource.data.pertemuan_ke > 0
+        && request.resource.data.tanggal is string
+        && request.resource.data.hari is string
+        && request.resource.data.jam_mulai is string
+        && request.resource.data.jam_selesai is string
+        && request.resource.data.topik is string
+        && request.resource.data.deskripsi is string;
+      allow update: if isTeacher()
+        && ownsClass(resource.data.class_id)
+        && resource.data.teacher_id == request.auth.uid
+        && request.resource.data.class_id == resource.data.class_id
+        && request.resource.data.teacher_id == resource.data.teacher_id
+        && request.resource.data.pertemuan_ke == resource.data.pertemuan_ke;
+      allow delete: if isTeacher()
+        && ownsClass(resource.data.class_id)
+        && resource.data.teacher_id == request.auth.uid;
+    }
+
+    match /attendance/{attendanceId} {
+      allow read: if signedIn()
+        && (resource.data.student_id == request.auth.uid || resource.data.teacher_id == request.auth.uid);
+      allow create, update: if isTeacher()
+        && request.resource.data.teacher_id == request.auth.uid
+        && ownsClass(request.resource.data.class_id)
+        && isClassMember(request.resource.data.class_id, request.resource.data.student_id)
+        && get(/databases/$(database)/documents/meetings/$(request.resource.data.meeting_id)).data.class_id == request.resource.data.class_id
+        && request.resource.data.status in ['hadir', 'izin', 'sakit', 'alpa'];
+      allow delete: if isTeacher()
+        && resource.data.teacher_id == request.auth.uid
+        && ownsClass(resource.data.class_id);
+    }
   }
 }

@@ -8,6 +8,7 @@ import BerandaScreen from '../screens/student/BerandaScreen';
 import KelasScreen from '../screens/student/KelasScreen';
 import GabungKelasScreen from '../screens/student/GabungKelasScreen';
 import JadwalScreen from '../screens/student/JadwalScreen';
+import StudentMeetingListScreen from '../screens/student/StudentMeetingListScreen';
 import ProfilScreen from '../screens/student/ProfilScreen';
 
 import { colors } from '../core/theme';
@@ -35,6 +36,10 @@ function KelasNavigator() {
       <KelasStack.Screen
         name="GabungKelas"
         component={GabungKelasScreen}
+      />
+      <KelasStack.Screen
+        name="DaftarPertemuan"
+        component={StudentMeetingListScreen}
       />
     </KelasStack.Navigator>
   );
