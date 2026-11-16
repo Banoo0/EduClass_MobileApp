@@ -401,7 +401,7 @@ export default function KelasScreen({ navigation }) {
                           size={15}
                           color={colors.textMuted}
                         />
-
+//mancing
                         <Text
                           style={styles.teacherName}
                           numberOfLines={1}
