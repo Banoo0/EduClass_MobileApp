@@ -1,0 +1,36 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function publishedAssignment(assignmentId) {
+      return firestore.get(/databases/(default)/documents/assignments/$(assignmentId)).data.status == 'terbit';
+    }
+
+    function assignmentTeacher(assignmentId) {
+      return firestore.get(/databases/(default)/documents/assignments/$(assignmentId)).data.teacher_id == request.auth.uid;
+    }
+
+    function studentBelongsToAssignmentClass(assignmentId) {
+      let assignment = firestore.get(/databases/(default)/documents/assignments/$(assignmentId)).data;
+      return firestore.exists(/databases/(default)/documents/class_members/$(assignment.class_id + '_' + request.auth.uid));
+    }
+
+    match /assignments/{assignmentId}/{studentId}/{fileName} {
+      allow read: if signedIn() && (
+        studentId == request.auth.uid || assignmentTeacher(assignmentId)
+      );
+
+      allow create: if signedIn()
+        && studentId == request.auth.uid
+        && publishedAssignment(assignmentId)
+        && studentBelongsToAssignmentClass(assignmentId)
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|application/msword|application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document|application/vnd\\.ms-excel|application/vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.sheet|image/.*');
+
+      allow update, delete: if false;
+    }
+  }
+}

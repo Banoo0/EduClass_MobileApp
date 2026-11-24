@@ -206,7 +206,7 @@ export default function BerandaScreen({ navigation }) {
               <SectionHeader
                 title="Tugas & Pengumpulan"
                 actionLabel={`Lihat Semua (${s.dipantau.length})`}
-                onAction={() => fiturSegeraHadir('Daftar semua tugas')}
+                onAction={() => navigation.navigate('BuatTugas')}
                 style={styles.section}
               />
               {s.dipantau.length ? (
@@ -221,7 +221,7 @@ export default function BerandaScreen({ navigation }) {
                       submitted={(t.pengumpulan ?? []).length}
                       total={t.kelas?.jumlah_siswa ?? 0}
                       ungraded={jumlahBelumDinilai(t)}
-                      onPress={() => fiturSegeraHadir('Pemeriksaan pengumpulan')}
+                      onPress={() => navigation.navigate('BuatTugas')}
                     />
                   ))}
                 </View>

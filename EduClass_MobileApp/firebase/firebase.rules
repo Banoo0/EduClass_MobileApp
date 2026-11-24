@@ -20,6 +20,10 @@ service cloud.firestore {
       return signedIn()
         && exists(/databases/$(database)/documents/class_members/$(classId + '_' + request.auth.uid));
     }
+    function ownsClass(classId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/classes/$(classId)).data.teacher_id == request.auth.uid;
+    }
 
     // Daftar sekolah boleh dibaca siapa saja (form register), tidak bisa diubah dari aplikasi.
     match /schools/{schoolId} {
@@ -144,26 +148,89 @@ service cloud.firestore {
             || resource.data.teacher_id == request.auth.uid
             || isMember(resource.data.class_id));
       allow list: if signedIn()
-        && (resource.data.teacher_id == request.auth.uid || isMember(resource.data.class_id));
+        && (ownsClass(resource.data.class_id) || isMember(resource.data.class_id));
 
       allow create: if isTeacher()
         && request.resource.data.teacher_id == request.auth.uid
-        && meetingId.matches(request.resource.data.schedule_id + '_.*')
-        && get(/databases/$(database)/documents/schedules/$(request.resource.data.schedule_id)).data.teacher_id
+        && get(/databases/$(database)/documents/classes/$(request.resource.data.class_id)).data.teacher_id
              == request.auth.uid
-        && get(/databases/$(database)/documents/schedules/$(request.resource.data.schedule_id)).data.class_id
-             == request.resource.data.class_id
+        && request.resource.data.pertemuan_ke is int
+        && request.resource.data.pertemuan_ke > 0
+        && meetingId.matches(request.resource.data.class_id + '_meeting_[0-9]{3}')
         && request.resource.data.keys().hasOnly(
-             ['schedule_id', 'class_id', 'teacher_id', 'tanggal', 'topik', 'deskripsi',
-              'presensi_dibuka_at', 'presensi_ditutup_at', 'created_at']);
+             ['class_id', 'teacher_id', 'pertemuan_ke', 'tanggal', 'hari', 'jam_mulai', 'jam_selesai',
+              'topik', 'deskripsi', 'presensi_dibuka_at', 'presensi_ditutup_at', 'created_at']);
 
       allow update: if signedIn()
         && resource.data.teacher_id == request.auth.uid
         && request.resource.data.teacher_id == resource.data.teacher_id
         && request.resource.data.class_id == resource.data.class_id
-        && request.resource.data.schedule_id == resource.data.schedule_id;
+        && (!('schedule_id' in resource.data) || request.resource.data.schedule_id == resource.data.schedule_id)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+             ['tanggal', 'hari', 'jam_mulai', 'jam_selesai', 'topik', 'deskripsi',
+              'presensi_dibuka_at', 'presensi_ditutup_at']);
 
       allow delete: if signedIn() && resource.data.teacher_id == request.auth.uid;
+    }
+
+    // ---------- Tugas dan pengumpulan ----------
+    match /assignments/{assignmentId} {
+      allow get: if signedIn() && (resource == null
+        || resource.data.teacher_id == request.auth.uid
+        || (resource.data.status == 'terbit' && isMember(resource.data.class_id)));
+      allow list: if signedIn() && (resource.data.teacher_id == request.auth.uid
+        || (resource.data.status == 'terbit' && isMember(resource.data.class_id)));
+
+      allow create: if isTeacher()
+        && request.resource.data.teacher_id == request.auth.uid
+        && get(/databases/$(database)/documents/classes/$(request.resource.data.class_id)).data.teacher_id == request.auth.uid
+        && request.resource.data.judul is string && request.resource.data.judul.size() > 0
+        && request.resource.data.status in ['draft', 'terbit']
+        && request.resource.data.keys().hasOnly(['class_id', 'class_nama', 'teacher_id', 'teacher_nama', 'judul', 'deskripsi', 'deadline', 'status', 'created_at', 'updated_at']);
+
+      allow update: if isTeacher()
+        && resource.data.teacher_id == request.auth.uid
+        && request.resource.data.teacher_id == resource.data.teacher_id
+        && request.resource.data.class_id == resource.data.class_id
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['judul', 'deskripsi', 'deadline', 'status', 'updated_at'])
+        && request.resource.data.status in ['draft', 'terbit'];
+      allow delete: if isTeacher() && resource.data.teacher_id == request.auth.uid;
+    }
+
+    match /submissions/{submissionId} {
+      allow get: if signedIn() && (resource == null
+        || resource.data.student_id == request.auth.uid
+        || resource.data.teacher_id == request.auth.uid);
+      allow list: if signedIn() && (resource.data.student_id == request.auth.uid
+        || resource.data.teacher_id == request.auth.uid);
+
+      allow create: if isStudent()
+        && submissionId == request.resource.data.assignment_id + '_' + request.auth.uid
+        && request.resource.data.student_id == request.auth.uid
+        && isMember(request.resource.data.class_id)
+        && assignmentAllowsSubmission(request.resource.data)
+        && request.resource.data.status == 'dikumpulkan'
+        && request.resource.data.keys().hasOnly(['assignment_id', 'class_id', 'teacher_id', 'student_id', 'student_nama', 'status', 'file_path', 'file_name', 'file_type', 'submitted_at', 'nilai', 'catatan_guru']);
+
+      allow update: if signedIn()
+        && request.resource.data.assignment_id == resource.data.assignment_id
+        && request.resource.data.class_id == resource.data.class_id
+        && request.resource.data.teacher_id == resource.data.teacher_id
+        && request.resource.data.student_id == resource.data.student_id
+        && ((isTeacher() && resource.data.teacher_id == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nilai', 'catatan_guru', 'status', 'updated_at'])
+              && request.resource.data.status in ['perlu_revisi', 'dinilai'])
+            || (isStudent() && resource.data.student_id == request.auth.uid
+              && request.resource.data.status == 'dikumpulkan'
+              && isMember(resource.data.class_id)
+              && assignmentAllowsSubmission(request.resource.data)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['student_nama', 'status', 'file_path', 'file_name', 'file_type', 'submitted_at'])));
+      allow delete: if false;
+    }
+
+    function assignmentAllowsSubmission(d) {
+      let a = get(/databases/$(database)/documents/assignments/$(d.assignment_id)).data;
+      return a.status == 'terbit' && a.class_id == d.class_id && a.teacher_id == d.teacher_id;
     }
 
     // ---------- Presensi ----------
@@ -176,18 +243,15 @@ service cloud.firestore {
         && (resource.data.student_id == request.auth.uid
             || resource.data.teacher_id == request.auth.uid);
 
-      // Guru mencatat presensi siapa saja di kelasnya; siswa hanya untuk dirinya sendiri
-      // dan hanya selama presensi pertemuan itu sedang dibuka.
-      allow create: if signedIn()
+      // Presensi hanya bisa dicatat oleh guru pemilik pertemuan; siswa hanya membaca status.
+      allow create: if isTeacher()
         && attendanceId == request.resource.data.meeting_id + '_' + request.resource.data.student_id
         && request.resource.data.status is string
         && request.resource.data.keys().hasOnly(
              ['meeting_id', 'class_id', 'teacher_id', 'student_id', 'status', 'waktu_absen'])
         && meetingMatches(request.resource.data)
-        && ((isTeacher() && request.resource.data.teacher_id == request.auth.uid)
-            || (request.resource.data.student_id == request.auth.uid
-                && isMember(request.resource.data.class_id)
-                && meetingOpen(request.resource.data.meeting_id)));
+        && request.resource.data.teacher_id == request.auth.uid
+        && ownsClass(request.resource.data.class_id);
 
       allow update: if signedIn()
         && resource.data.teacher_id == request.auth.uid
@@ -202,10 +266,6 @@ service cloud.firestore {
     function meetingMatches(d) {
       let m = get(/databases/$(database)/documents/meetings/$(d.meeting_id)).data;
       return m.class_id == d.class_id && m.teacher_id == d.teacher_id;
-    }
-    function meetingOpen(meetingId) {
-      let m = get(/databases/$(database)/documents/meetings/$(meetingId)).data;
-      return m.presensi_dibuka_at != null && m.presensi_ditutup_at == null;
     }
   }
 }

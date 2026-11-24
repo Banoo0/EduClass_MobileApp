@@ -4,17 +4,19 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
-import PlaceholderScreen from '../components/PlaceholderScreen';
 import BerandaScreen from '../screens/teacher/BerandaScreen';
 import KelolaKelasScreen from '../screens/teacher/KelolaKelasScreen';
 import MeetingManagementScreen from '../screens/teacher/MeetingManagementScreen';
 import JadwalScreen from '../screens/teacher/JadwalScreen';
 import ProfilScreen from '../screens/teacher/ProfilScreen';
+import KelolaTugasScreen from '../screens/teacher/KelolaTugasScreen';
+import ReviewSubmissionsScreen from '../screens/teacher/ReviewSubmissionsScreen';
 
 import { colors } from '../core/theme';
 
 const Tab = createBottomTabNavigator();
 const ClassStack = createNativeStackNavigator();
+const TaskStack = createNativeStackNavigator();
 
 function ClassManagementNavigator() {
   return (
@@ -25,9 +27,12 @@ function ClassManagementNavigator() {
   );
 }
 
-const BuatTugas = () => (
-  <PlaceholderScreen title="Buat tugas" />
-);
+function TaskManagementNavigator() {
+  return <TaskStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+    <TaskStack.Screen name="DaftarTugasGuru" component={KelolaTugasScreen} />
+    <TaskStack.Screen name="PeriksaTugas" component={ReviewSubmissionsScreen} />
+  </TaskStack.Navigator>;
+}
 
 const ICONS = {
   Beranda: ['home', 'home-outline'],
@@ -85,7 +90,7 @@ export default function TeacherTabs() {
 
       <Tab.Screen
         name="BuatTugas"
-        component={BuatTugas}
+        component={TaskManagementNavigator}
         options={{ title: 'Buat Tugas' }}
       />
 

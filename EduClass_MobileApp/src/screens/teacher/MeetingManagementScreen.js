@@ -101,6 +101,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState('');
 
@@ -160,6 +161,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
       if (createError) throw createError;
       setTopik('');
       setDeskripsi('');
+      setShowCreate(false);
       await loadMeetings(true);
       notify('Pertemuan dibuat', `Pertemuan ${nextNumber} berhasil ditambahkan.`);
     } catch (err) {
@@ -303,7 +305,13 @@ export default function MeetingManagementScreen({ route, navigation }) {
         <Text style={styles.title}>{className || 'Kelas'}</Text>
         <Text style={styles.subtitle}>{classMeta || 'Atur pertemuan untuk kelas ini'}</Text>
 
-        <View style={styles.formCard}>
+        <Pressable style={styles.addMeetingButton} onPress={() => { setShowCreate((shown) => !shown); setError(''); }}>
+          <Ionicons name={showCreate ? 'close' : 'add-circle-outline'} size={19} color={colors.primary} />
+          <Text style={styles.addMeetingText}>{showCreate ? 'Tutup formulir' : 'Tambah pertemuan'}</Text>
+          {!showCreate ? <Text style={styles.nextNumber}>Pertemuan {nextNumber}</Text> : null}
+        </Pressable>
+
+        {showCreate ? <View style={styles.formCard}>
           <View style={styles.formHeader}>
             <View style={styles.formNumberBadge}><Text style={styles.formNumberText}>{nextNumber}</Text></View>
             <View style={styles.formHeaderText}>
@@ -323,7 +331,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
           <AppInput label="Judul pertemuan" required value={topik} onChangeText={setTopik} placeholder="Contoh: Pengantar Aljabar" />
           <AppInput label="Deskripsi pertemuan" required value={deskripsi} onChangeText={setDeskripsi} placeholder="Materi atau kegiatan yang dibahas" multiline textAlignVertical="top" style={styles.descriptionInput} />
           <AppButton title={`Tambah Pertemuan ${nextNumber}`} icon="add-circle-outline" loading={creating} disabled={creating} onPress={handleCreate} />
-        </View>
+        </View> : null}
 
         <FormAlert message={error} />
         <View style={styles.listHeading}>
@@ -437,6 +445,9 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: fontSize.xl, fontWeight: fontWeight.bold },
   subtitle: { color: colors.textMuted, fontSize: fontSize.sm, marginTop: 5, marginBottom: 20 },
   formCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, marginBottom: 18 },
+  addMeetingButton: { flexDirection: 'row', alignItems: 'center', gap: 9, minHeight: 48, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, borderRadius: radius.md, paddingHorizontal: spacing.md, marginBottom: spacing.md },
+  addMeetingText: { color: colors.primary, fontWeight: fontWeight.bold, fontSize: fontSize.sm },
+  nextNumber: { marginLeft: 'auto', color: colors.textMuted, fontSize: fontSize.xs },
   formHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 16 },
   formNumberBadge: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primarySoft },
   formNumberText: { color: colors.primary, fontWeight: fontWeight.bold },

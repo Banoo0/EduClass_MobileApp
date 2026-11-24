@@ -3,20 +3,29 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
-import PlaceholderScreen from '../components/PlaceholderScreen';
 import BerandaScreen from '../screens/student/BerandaScreen';
 import KelasScreen from '../screens/student/KelasScreen';
 import GabungKelasScreen from '../screens/student/GabungKelasScreen';
 import JadwalScreen from '../screens/student/JadwalScreen';
 import StudentMeetingListScreen from '../screens/student/StudentMeetingListScreen';
 import ProfilScreen from '../screens/student/ProfilScreen';
+import TugasScreen from '../screens/student/TugasScreen';
+import DetailTugasScreen from '../screens/student/DetailTugasScreen';
+import UploadFileScreen from '../screens/student/UploadFileScreen';
 
 import { colors } from '../core/theme';
 
 const Tab = createBottomTabNavigator();
 const KelasStack = createNativeStackNavigator();
+const TugasStack = createNativeStackNavigator();
 
-const Tugas = () => <PlaceholderScreen title="Tugas" />;
+function TugasNavigator() {
+  return <TugasStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+    <TugasStack.Screen name="DaftarTugas" component={TugasScreen} />
+    <TugasStack.Screen name="DetailTugas" component={DetailTugasScreen} />
+    <TugasStack.Screen name="UploadTugas" component={UploadFileScreen} />
+  </TugasStack.Navigator>;
+}
 
 // Stack di dalam tab Kelas.
 // Siswa bisa membuka halaman gabung, lalu kembali ke daftar kelas.
@@ -84,7 +93,7 @@ export default function StudentTabs() {
 
       <Tab.Screen
         name="Tugas"
-        component={Tugas}
+        component={TugasNavigator}
       />
 
       <Tab.Screen
