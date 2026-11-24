@@ -1,3 +1,4 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AppButton from './AppButton.js';
@@ -5,7 +6,7 @@ import Chip from './Chip';
 import { formatDeadline } from '../utils/dateHelper';
 import { colors, fontSize, fontWeight, radius, spacing } from '../core/theme';
 
-const STRIPE = { danger: colors.danger, warning: colors.warning, neutral: colors.border };
+const make_STRIPE = (colors) => ({ danger: colors.danger, warning: colors.warning, neutral: colors.border });
 
 // Kartu tugas: garis warna di kiri, chip mapel + tenggat, judul, guru + keterangan, tombol Detail/Submit.
 // dueAt berupa ISO UTC dari database. Tombol hanya muncul jika onDetail / onSubmit diisi.
@@ -21,6 +22,10 @@ export default function TaskCard({
   onSubmit,
   style,
 }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const STRIPE = make_STRIPE(colors);
+  const styles = make_styles(colors);
+
   const due = formatDeadline(dueAt);
   const subjectLabel = [subject, kelas].filter(Boolean).join(' - ');
 
@@ -71,7 +76,7 @@ export default function TaskCard({
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
@@ -87,4 +92,4 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   button: { flex: 1, minHeight: 44 },
   detail: { backgroundColor: colors.cardAlt, borderColor: colors.cardAlt },
-});
+}));

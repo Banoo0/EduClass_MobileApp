@@ -1,3 +1,5 @@
+import { useAppTheme } from '../context/ThemeContext';
+import AppBackdrop from '../components/AppBackdrop';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,9 +9,12 @@ import { colors, radius } from '../core/theme';
 // Layar sementara untuk tab yang belum dikerjakan. Ganti dengan layar aslimu di
 // StudentTabs.js / TeacherTabs.js, lalu hapus pemakaian placeholder-nya.
 export default function PlaceholderScreen({ title, owner }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const { profile, role } = useAuth();
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['top']}><AppBackdrop />
       <View style={styles.body}>
         <View style={styles.icon}>
           <Ionicons name="construct-outline" size={28} color={colors.primary} />
@@ -27,7 +32,7 @@ export default function PlaceholderScreen({ title, owner }) {
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   body: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   icon: { width: 64, height: 64, borderRadius: 20, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
@@ -36,4 +41,4 @@ const styles = StyleSheet.create({
   card: { marginTop: 24, backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 18, alignItems: 'center' },
   cardLabel: { color: colors.textMuted, fontSize: 12.5 },
   cardValue: { color: colors.text, fontSize: 15, fontWeight: '600', marginTop: 4 },
-});
+}));

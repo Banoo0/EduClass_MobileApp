@@ -1,3 +1,7 @@
+import AppBackdrop from '../components/AppBackdrop';
+import { useAppTheme } from '../context/ThemeContext';
+import ChatInboxScreen from '../screens/shared/ChatInboxScreen';
+import PrivateChatScreen from '../screens/shared/PrivateChatScreen';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,8 +15,11 @@ import { colors, radius } from '../core/theme';
 const Stack = createNativeStackNavigator();
 
 function SplashScreen() {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   return (
-    <View style={styles.center}>
+    <View style={styles.center}><AppBackdrop />
       <View style={styles.logo}>
         <Ionicons name="school" size={34} color="#FFFFFF" />
       </View>
@@ -24,6 +31,9 @@ function SplashScreen() {
 
 // Dipakai jika sudah login tetapi baris profilnya tidak bisa dibaca dari database
 function ProfileMissingScreen() {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const { profileError, signOut, refreshProfile } = useAuth();
   return (
     <View style={styles.center}>
@@ -43,6 +53,8 @@ function ProfileMissingScreen() {
 
 // Pintu masuk tunggal: arah ditentukan oleh status login dan role dari tabel profiles.
 export default function RootNavigator() {
+  const { colors, mode: appThemeMode } = useAppTheme();
+
   const { session, profile, role, loading } = useAuth();
 
   if (loading) return <SplashScreen />;
@@ -58,15 +70,16 @@ export default function RootNavigator() {
       ) : (
         <Stack.Screen name="SiswaApp" component={StudentTabs} />
       )}
+      {session && profile ? <><Stack.Screen name="ChatInbox" component={ChatInboxScreen} /><Stack.Screen name="ChatLangsung" component={PrivateChatScreen} /></> : null}
     </Stack.Navigator>
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', padding: 28 },
   logo: { width: 72, height: 72, borderRadius: radius.lg, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   brand: { color: colors.text, fontSize: 24, fontWeight: '800', marginTop: 16 },
   problemTitle: { color: colors.text, fontSize: 20, fontWeight: '800', marginTop: 16, textAlign: 'center' },
   problemText: { color: colors.textMuted, fontSize: 14.5, lineHeight: 22, textAlign: 'center', marginTop: 10 },
   problemDetail: { color: colors.textFaint, fontSize: 12.5, textAlign: 'center', marginTop: 12 },
-});
+}));

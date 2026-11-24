@@ -1,3 +1,4 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { forwardRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +9,9 @@ const AppInput = forwardRef(function AppInput(
   { label, required, hint, error, icon, secureTextEntry, ...props },
   ref
 ) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const { multiline, style: inputStyle, ...inputProps } = props;
   const [focused, setFocused] = useState(false);
   const [hidden, setHidden] = useState(!!secureTextEntry);
@@ -47,7 +51,7 @@ const AppInput = forwardRef(function AppInput(
 
 export default AppInput;
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   wrap: { marginBottom: 16 },
   label: { color: colors.textMuted, fontSize: 13, fontWeight: '600', marginBottom: 8 },
   required: { color: colors.danger },
@@ -83,4 +87,4 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   error: { color: colors.danger, fontSize: 12.5, marginTop: 6 },
-});
+}));

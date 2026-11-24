@@ -16,6 +16,8 @@ export const colors = {
   warning: '#F59E0B', // tenggat "Besok"
   warningSoft: 'rgba(245,158,11,0.14)',
   successSoft: 'rgba(22,163,74,0.16)',
+  accentText: '#A7C5FF', statusGreen: '#36D6A0', statusOrange: '#FFB65C', statusRed: '#FFB4B4', statusYellow: '#FACC15', avatarInk: '#0E1015',
+  navSurface: '#20252E', navActive: '#304561', navActiveText: '#C1D7FF', chatMine: '#244c83', chatTime: '#b9c8dc',
   onAccent: '#FFFFFF', // teks/ikon di atas tombol berwarna
 };
 
@@ -27,3 +29,12 @@ export const fontSize = { xs: 12, sm: 13, md: 15, lg: 17, xl: 20, xxl: 24, displ
 export const fontWeight = { regular: '400', medium: '500', semibold: '600', bold: '700', heavy: '800' };
 
 export default { colors, radius, spacing, fontSize, fontWeight };
+export const lightColors = {
+  ...colors,
+  accentText: '#245FC5', statusGreen: '#167447', statusOrange: '#925606', statusRed: '#B42336', statusYellow: '#925606',
+  navSurface: '#FFFFFF', navActive: '#E0EBFF', navActiveText: '#194DAD', chatMine: '#DCE9FF', chatTime: '#50617A',
+  bg: '#EDF3FA', card: '#FFFFFF', cardAlt: '#F0F4FA', border: '#CFD9E7',
+  text: '#142238', textMuted: '#47586E', textFaint: '#65758A',
+  primary: '#245FC5', primarySoft: '#E3EDFF', success: '#167447', successSoft: '#DDF4E7',
+  danger: '#B42336', dangerSoft: '#FCE6E9', warning: '#925606', warningSoft: '#FFF0D6',
+};

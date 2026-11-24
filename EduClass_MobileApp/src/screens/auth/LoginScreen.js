@@ -1,3 +1,6 @@
+import ThemeSettings from '../../components/ThemeSettings';
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
 import { useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +21,9 @@ const AKUN_UJI = [
 ];
 
 export default function LoginScreen({ navigation }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const { signIn } = useAuth();
   const passwordRef = useRef(null);
   const [email, setEmail] = useState('');
@@ -47,7 +53,7 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe}><AppBackdrop />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <AuthHeader title="Selamat datang kembali" subtitle="Masuk untuk melihat jadwal dan tugasmu." />
@@ -94,6 +100,7 @@ export default function LoginScreen({ navigation }) {
             </Pressable>
           </View>
 
+          <ThemeSettings />
           {__DEV__ ? (
             <View style={styles.devBox}>
               <Text style={styles.devTitle}>Mode development: isi email akun uji</Text>
@@ -112,7 +119,7 @@ export default function LoginScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { flexGrow: 1, padding: 24, paddingTop: 36 },
   card: { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: radius.lg, padding: 20 },
@@ -124,4 +131,4 @@ const styles = StyleSheet.create({
   devRow: { flexDirection: 'row', gap: 8 },
   devChip: { backgroundColor: colors.cardAlt, borderRadius: radius.pill, paddingVertical: 7, paddingHorizontal: 14 },
   devChipText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
-});
+}));

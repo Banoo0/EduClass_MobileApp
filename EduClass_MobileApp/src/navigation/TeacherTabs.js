@@ -1,8 +1,11 @@
+import { ThemeProvider as NavigationThemeProvider, useTheme as useNavigationTheme } from '@react-navigation/native';
+import { renderFocusedTabScene } from '../components/FocusedTabScene';
+import { useAppTheme } from '../context/ThemeContext';
+import FloatingTabBar, { FloatingDockProvider } from '../components/FloatingTabBar';
+import PrivateChatScreen from '../screens/shared/PrivateChatScreen';
 
-import { StyleSheet, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
 
 import BerandaScreen from '../screens/teacher/BerandaScreen';
 import KelolaKelasScreen from '../screens/teacher/KelolaKelasScreen';
@@ -19,16 +22,21 @@ const ClassStack = createNativeStackNavigator();
 const TaskStack = createNativeStackNavigator();
 
 function ClassManagementNavigator() {
+  const { colors, mode: appThemeMode } = useAppTheme();
+
   return (
-    <ClassStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+    <ClassStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
       <ClassStack.Screen name="DaftarKelas" component={KelolaKelasScreen} />
       <ClassStack.Screen name="KelolaPertemuan" component={MeetingManagementScreen} />
+      <ClassStack.Screen name="ChatPribadi" component={PrivateChatScreen} />
     </ClassStack.Navigator>
   );
 }
 
 function TaskManagementNavigator() {
-  return <TaskStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+  const { colors, mode: appThemeMode } = useAppTheme();
+
+  return <TaskStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
     <TaskStack.Screen name="DaftarTugasGuru" component={KelolaTugasScreen} />
     <TaskStack.Screen name="PeriksaTugas" component={ReviewSubmissionsScreen} />
   </TaskStack.Navigator>;
@@ -42,40 +50,19 @@ const ICONS = {
 };
 
 export default function TeacherTabs() {
+  const { colors, mode: appThemeMode } = useAppTheme();
+
+  const navigationTheme = useNavigationTheme();
+  const transparentTheme = { ...navigationTheme, colors: { ...navigationTheme.colors, background: 'transparent' } };
+
   return (
+    <FloatingDockProvider>
+    <NavigationThemeProvider value={transparentTheme}>
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopColor: colors.border,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-        },
-        tabBarIcon: ({ color, size, focused }) => {
-          if (route.name === 'BuatTugas') {
-            return (
-              <View style={styles.fab}>
-                <Ionicons name="add" size={26} color="#FFFFFF" />
-              </View>
-            );
-          }
-
-          const icon = ICONS[route.name];
-
-          return (
-            <Ionicons
-              name={icon[focused ? 0 : 1]}
-              size={size}
-              color={color}
-            />
-          );
-        },
-      })}
+      screenLayout={renderFocusedTabScene}
+      detachInactiveScreens={true}
+      tabBar={(props) => <FloatingTabBar {...props} icons={ICONS} />}
+      screenOptions={{ headerShown: false, freezeOnBlur: false, animation: 'none', sceneStyle: { backgroundColor: 'transparent' }, tabBarStyle: { position: 'absolute', backgroundColor: 'transparent', borderTopWidth: 0 } }}
     >
       <Tab.Screen
         name="Beranda"
@@ -104,16 +91,7 @@ export default function TeacherTabs() {
         component={ProfilScreen}
       />
     </Tab.Navigator>
+    </NavigationThemeProvider>
+    </FloatingDockProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  fab: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

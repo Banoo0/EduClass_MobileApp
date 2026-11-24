@@ -1,9 +1,13 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../core/theme';
 
 // Logo EduClass (kotak biru + topi toga, seperti di header mockup) lalu judul halaman.
 export default function AuthHeader({ title, subtitle }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   return (
     <View style={styles.wrap}>
       <View style={styles.brandRow}>
@@ -18,7 +22,7 @@ export default function AuthHeader({ title, subtitle }) {
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   wrap: { marginBottom: 28 },
   brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
   logo: {
@@ -33,4 +37,4 @@ const styles = StyleSheet.create({
   brand: { color: colors.text, fontSize: 18, fontWeight: '700' },
   title: { color: colors.text, fontSize: 28, fontWeight: '800', letterSpacing: -0.4 },
   subtitle: { color: colors.textMuted, fontSize: 15, lineHeight: 22, marginTop: 8 },
-});
+}));

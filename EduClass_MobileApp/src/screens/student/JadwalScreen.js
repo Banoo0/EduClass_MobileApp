@@ -1,9 +1,15 @@
-import { useCallback, useState } from 'react';
+import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
+import MonthlyCalendar from '../../components/MonthlyCalendar';
+import { useCallback, useState, useRef } from 'react';
+import { fetchStudentAssignments } from '../../services/assignmentService';
 import {
   ActivityIndicator,
   Alert,
   Linking,
   Platform,
+  useWindowDimensions,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -20,7 +26,7 @@ import FormAlert from '../../components/FormAlert';
 
 import { useAuth } from '../../context/AuthContext';
 import { fetchStudentSchedules } from '../../services/classServices';
-import { fetchStudentWeekMeetings } from '../../services/meetingService';
+import { fetchStudentWeekMeetings, markOwnAttendance, validateMeetingUrl } from '../../services/meetingService';
 
 import {
   colors,
@@ -29,6 +35,22 @@ import {
   radius,
   spacing,
 } from '../../core/theme';
+
+function deadlineDate(item) {
+  const value = item.deadline_at || item.deadline;
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function assignmentStatus(item, now, colors) {
+  const status = item.submission?.status;
+  if (status === 'perlu_revisi') return { label: 'Perlu revisi', color: colors.statusYellow, kind: 'revision' };
+  if (status === 'dinilai') return { label: 'Sudah dinilai', color: colors.statusGreen, kind: 'done' };
+  if (item.submission) return { label: 'Sudah dikumpulkan', color: colors.statusGreen, kind: 'done' };
+  if (deadlineDate(item)?.getTime() < now.getTime()) return { label: 'Lewat tenggat', color: colors.danger, kind: 'late' };
+  return { label: 'Belum dikumpulkan', color: colors.warning, kind: 'pending' };
+}
 
 const RED = '#A40000';
 const RED_DARK = '#860000';
@@ -222,7 +244,7 @@ function getWeekNumber(date) {
   return Math.ceil((date.getDate() + firstDayOffset) / 7);
 }
 
-function getStatusStyle(status) {
+function getStatusStyle(status, styles) {
   if (status === 'Sedang Berlangsung') {
     return {
       badge: styles.statusLive,
@@ -259,10 +281,41 @@ function notify(title, message) {
 // =====================================================
 
 export default function JadwalScreen({ navigation }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
+  const { width: screenWidth } = useWindowDimensions();
+  const compact = screenWidth < 600;
   const { user, profile } = useAuth();
-  const studentId = user?.id || profile?.id;
+  const studentId = user?.uid || user?.id || profile?.id;
 
   const [schedules, setSchedules] = useState([]);
+  const [assignments, setAssignments] = useState([]);
+  const [assignmentError, setAssignmentError] = useState('');
+  const [assignmentLoading, setAssignmentLoading] = useState(true);
+  const assignmentRequest = useRef(0);
+  const loadAssignments = useCallback(async () => {
+    const request = ++assignmentRequest.current;
+    setAssignmentLoading(true);
+    setAssignmentError('');
+    try {
+      if (!studentId) throw new Error('Akun siswa tidak ditemukan.');
+      const result = await fetchStudentAssignments(studentId);
+      if (result.error) throw result.error;
+      if (request === assignmentRequest.current) setAssignments(result.data || []);
+    } catch (err) {
+      if (request === assignmentRequest.current) {
+        setAssignments([]);
+        setAssignmentError(err.message || 'Gagal memuat tenggat tugas.');
+      }
+    } finally {
+      if (request === assignmentRequest.current) setAssignmentLoading(false);
+    }
+  }, [studentId]);
+  useFocusEffect(useCallback(() => {
+    loadAssignments();
+    return () => { assignmentRequest.current++; };
+  }, [loadAssignments]));
   const [meetings, setMeetings] = useState([]);
   const [attendanceMap, setAttendanceMap] = useState({});
   const [teacherMap, setTeacherMap] = useState({});
@@ -270,6 +323,7 @@ export default function JadwalScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [busyAttendance, setBusyAttendance] = useState(null);
 
   const [selectedDateKey, setSelectedDateKey] = useState(
     toDateKey(new Date())
@@ -281,11 +335,9 @@ export default function JadwalScreen({ navigation }) {
   const today = DAY_BY_JS[now.getDay()];
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
-  const weekDates = getWeekDates(now);
-  const weekStartKey = toDateKey(weekDates[0]);
-  const weekEndKey = toDateKey(weekDates[6]);
-
   const selectedDate = parseDateKey(selectedDateKey);
+  const weekStartKey = toDateKey(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+  const weekEndKey = toDateKey(new Date(selectedDate.getFullYear(), selectedDate.getMonth()+1, 0));
   const selectedDay = DAY_BY_JS[selectedDate.getDay()];
 
   // ===================================================
@@ -345,12 +397,13 @@ export default function JadwalScreen({ navigation }) {
       setTeacherMap(nextTeacherMap);
 
       // Pertemuan dan presensi: kegagalan membaca keduanya tidak menghilangkan jadwal.
-      const { data: weekData } = await fetchStudentWeekMeetings({
+      const { data: weekData, error: meetingError } = await fetchStudentWeekMeetings({
         studentId,
         schedules: rows,
         weekStartKey,
         weekEndKey,
       });
+      if (meetingError) setError(meetingError.message);
       setMeetings(weekData?.meetings || []);
       setAttendanceMap(weekData?.attendanceMap || {});
     } catch (err) {
@@ -378,14 +431,33 @@ export default function JadwalScreen({ navigation }) {
   const selectedMeetings = meetings
     .filter((item) => String(item.tanggal || '').slice(0, 10) === selectedDateKey)
     .map((item) => ({ ...item, isMeeting: true }));
-  const selectedMeetingClassIds = new Set(selectedMeetings.map((item) => item.class_id));
+  
   const selectedSchedules = [
     ...schedules.filter((item) =>
       normalizeDay(item.hari) === normalizeDay(selectedDay) &&
-      !selectedMeetingClassIds.has(item.class_id)
+      !selectedMeetings.some(m => m.class_id === item.class_id && (m.schedule_id === item.id || String(m.jam_mulai).slice(0,5) === String(item.jam_mulai).slice(0,5)))
     ),
     ...selectedMeetings,
   ].sort((a, b) => String(a.jam_mulai || '').localeCompare(String(b.jam_mulai || '')));
+
+  const deadlineEntries = assignments.map(item => {
+    const date = deadlineDate(item);
+    return date ? { item, date, key: toDateKey(date), ...assignmentStatus(item, now, colors) } : null;
+  }).filter(Boolean);
+  const selectedAssignments = deadlineEntries.filter(entry => entry.key === selectedDateKey)
+    .sort((a,b) => a.date.getTime() - b.date.getTime());
+  const dateMarkers = {};
+  deadlineEntries.forEach(entry => {
+    const markers = dateMarkers[entry.key] || (dateMarkers[entry.key] = []);
+    if (!markers.includes(entry.color)) markers.push(entry.color);
+  });
+  meetings.forEach(meeting => {
+    const key = String(meeting.tanggal || '').slice(0,10);
+    if (!key) return;
+    const markers = dateMarkers[key] || (dateMarkers[key] = []);
+    if (!markers.includes(BLUE)) markers.push(BLUE);
+  });
+  const refreshAll = () => { loadSchedules(true); loadAssignments(); };
 
   const totalDuration = schedules.reduce(
     (total, item) => total + durationMinutes(item),
@@ -398,16 +470,31 @@ export default function JadwalScreen({ navigation }) {
       'Sedang Berlangsung'
   ).length;
 
-  const monthLabel = now.toLocaleDateString('id-ID', {
+  const monthLabel = selectedDate.toLocaleDateString('id-ID', {
     month: 'long',
     year: 'numeric',
   });
 
-  const weekNumber = getWeekNumber(now);
+  const weekNumber = getWeekNumber(selectedDate);
 
   // ===================================================
   // MASUK ONLINE
   // ===================================================
+
+  const handleAttendance = async (meeting) => {
+    if (busyAttendance || !meeting) return;
+    setBusyAttendance(meeting.id);
+    setError('');
+    try {
+      const { data, error: saveError } = await markOwnAttendance(meeting.id);
+      if (saveError) throw saveError;
+      setAttendanceMap(old => ({ ...old, [meeting.id]: data }));
+      notify('Presensi berhasil', 'Kehadiran kamu sudah tercatat.');
+    } catch (err) {
+      setError(err.message || 'Gagal melakukan presensi.');
+      notify('Presensi gagal', err.message || 'Muat ulang jadwal dan coba kembali.');
+    } finally { setBusyAttendance(null); }
+  };
 
   const handleOpenOnline = async (schedule) => {
     const meetingUrl = schedule.meeting_url;
@@ -415,13 +502,13 @@ export default function JadwalScreen({ navigation }) {
     if (!meetingUrl) {
       notify(
         'Tautan belum tersedia',
-        'Guru belum menambahkan tautan pertemuan online pada jadwal ini.'
+        'Guru belum menambahkan tautan pertemuan online pada pertemuan ini.'
       );
       return;
     }
 
     try {
-      await Linking.openURL(meetingUrl);
+      await Linking.openURL(validateMeetingUrl(meetingUrl));
     } catch (err) {
       notify(
         'Tidak dapat membuka tautan',
@@ -435,10 +522,10 @@ export default function JadwalScreen({ navigation }) {
   // ===================================================
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <FloatingSafeAreaView style={styles.safe} edges={['top']}><AppBackdrop />
       <DashboardHeader
         variant="siswa"
-        title="Beranda"
+        title="Jadwal"
         onAvatarPress={() => navigation.navigate('Profil')}
       />
 
@@ -447,8 +534,8 @@ export default function JadwalScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => loadSchedules(true)}
+            refreshing={refreshing || assignmentLoading}
+            onRefresh={refreshAll}
             tintColor={colors.primary}
             colors={[colors.primary]}
             progressBackgroundColor={colors.card}
@@ -456,113 +543,51 @@ export default function JadwalScreen({ navigation }) {
         }
       >
         <FormAlert message={error} />
-
-        {/* JUDUL JADWAL */}
-        <View style={styles.pageHeading}>
-          <View style={styles.pageTitleWrap}>
-            <Text style={styles.pageTitle}>Jadwal Pelajaran</Text>
-            <Text style={styles.pageSubtitle}>
-              Minggu Ini • {monthLabel}
-            </Text>
-          </View>
-
-          <View style={styles.weekBadge}>
-            <Ionicons
-              name="calendar"
-              size={15}
-              color="#A7C5FF"
-            />
-            <Text style={styles.weekBadgeText}>
-              Pekan {weekNumber}
-            </Text>
-          </View>
+        <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+          <Text style={{color:colors.text,fontSize:16,fontWeight:'700'}}>{formatLongDate(selectedDate)}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Muat ulang jadwal" onPress={refreshAll} disabled={refreshing || assignmentLoading} style={{padding:8}}><Ionicons name="refresh-outline" size={22} color={BLUE}/></Pressable>
         </View>
-        {/* PILIH TANGGAL MINGGU INI */}
-        <View style={styles.calendarSection}>
-          <View style={styles.calendarHeading}>
-            <Text style={styles.sectionTitle}>PILIH HARI</Text>
+        <View style={[styles.calendarSection,{marginBottom:16}]}>
+          <MonthlyCalendar selectedDateKey={selectedDateKey} onChange={setSelectedDateKey} schedules={schedules} dateMarkers={dateMarkers} />
+          <View style={[styles.legend,compact && {gap:8,marginTop:8}]}>{[[BLUE,compact?'Pelajaran':'Pelajaran / pertemuan'],[colors.warning,'Tugas'],[colors.statusGreen,'Terkumpul'],[colors.danger,compact?'Terlambat':'Lewat tenggat'],[colors.statusYellow,'Revisi']].map(([color,label]) => <View key={label} style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:color}]} /><Text style={[styles.legendText,compact && {fontSize:12}]}>{label}</Text></View>)}</View>
+        </View>
 
-            <View style={styles.calendarDatePill}>
-              <View style={styles.todayDot} />
-              <Text style={styles.calendarDateText} numberOfLines={1}>
-                {DAY_BY_JS[parseDateKey(selectedDateKey).getDay()]},
-                {' '}
-                {formatDate(parseDateKey(selectedDateKey))}
-              </Text>
+        <View style={styles.deadlineSection}>
+          <View style={styles.scheduleHeading}>
+            <View style={styles.scheduleHeadingLeft}>
+              <Text style={styles.scheduleHeadingTitle}>Tenggat Tugas</Text>
+              
             </View>
+            <View style={styles.sessionBadge}><Text style={styles.sessionBadgeText}>{assignmentLoading || assignmentError ? '—' : selectedAssignments.length} Tugas</Text></View>
           </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.dateList}
-          >
-            {weekDates.map((date) => {
-              const dateKey = toDateKey(date);
-              const day = DAY_BY_JS[date.getDay()];
-              const selected = dateKey === selectedDateKey;
-              const isToday = dateKey === todayKey;
-
-              return (
-                <Pressable
-                  key={dateKey}
-                  onPress={() => setSelectedDateKey(dateKey)}
-                  style={[
-                    styles.dateCard,
-                    selected && styles.dateCardSelected,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.dateDay,
-                      selected && styles.dateTextSelected,
-                    ]}
-                  >
-                    {DAY_SHORT[day]}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.dateNumber,
-                      selected && styles.dateTextSelected,
-                    ]}
-                  >
-                    {date.getDate()}
-                  </Text>
-
-                  {isToday ? (
-                    <View
-                      style={[
-                        styles.dateIndicator,
-                        selected && styles.dateIndicatorSelected,
-                      ]}
-                    />
-                  ) : (
-                    <View style={styles.dateIndicatorPlaceholder} />
-                  )}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          {assignmentLoading ? <ActivityIndicator color={colors.primary} /> : assignmentError ? <FormAlert message={assignmentError} /> : selectedAssignments.length === 0 ? <Text style={styles.noDeadline}>Tidak ada tenggat</Text> : selectedAssignments.map(({item,date,label,color}) => (
+            <Pressable key={item.id} accessibilityRole="button" onPress={() => navigation.navigate('Tugas', { screen: 'DetailTugas', params: { assignmentId: item.id } })} style={[styles.deadlineCard,{borderLeftColor:color}]}>
+              <View style={{flex:1,minWidth:0,gap:6}}>
+                <Text style={styles.deadlineSubject}>{[item.class?.nama_mapel || item.class_nama,item.class?.rombel].filter(Boolean).join(' • ')}</Text>
+                <Text style={styles.subject}>{item.judul}</Text>
+                <Text style={styles.lessonSubtext}>Tenggat {date.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})} • {label}</Text>
+              </View>
+              <View style={{alignItems:'flex-end',gap:8}}>
+                {item.submission?.nilai != null ? <Text style={[styles.deadlineGrade,{color:colors.statusGreen}]}>{item.submission.nilai}/100</Text> : null}
+                <Ionicons name="chevron-forward" size={20} color={color} />
+              </View>
+            </Pressable>
+          ))}
         </View>
 
         {/* JUDUL DAFTAR SESI */}
         <View style={styles.scheduleHeading}>
           <View style={styles.scheduleHeadingLeft}>
             <Text style={styles.scheduleHeadingTitle}>
-              {selectedDateKey === todayKey
-                ? 'Jadwal Pelajaran Hari Ini'
-                : `Jadwal Hari ${selectedDay}`}
+              Pelajaran
             </Text>
 
-            <Text style={styles.scheduleHeadingSubtitle}>
-              {formatLongDate(parseDateKey(selectedDateKey))}
-            </Text>
+            
           </View>
 
           <View style={styles.sessionBadge}>
             <Text style={styles.sessionBadgeText}>
-              {selectedSchedules.length} Sesi Hari Ini
+              {selectedSchedules.length} Sesi
             </Text>
           </View>
         </View>
@@ -574,9 +599,7 @@ export default function JadwalScreen({ navigation }) {
               size="large"
               color={colors.primary}
             />
-            <Text style={styles.emptyText}>
-              Memuat jadwal pelajaran...
-            </Text>
+            
           </View>
         ) : selectedSchedules.length === 0 ? (
           <View style={styles.emptyCard}>
@@ -589,14 +612,10 @@ export default function JadwalScreen({ navigation }) {
             </View>
 
             <Text style={styles.emptyTitle}>
-              Belum Ada Jadwal
+              Tidak ada pelajaran
             </Text>
 
-            <Text style={styles.emptyText}>
-              {schedules.length === 0
-                ? 'Jadwal belum tersedia. Pastikan kamu sudah bergabung dengan kelas dan guru sudah membuat jadwal.'
-                : `Tidak ada jadwal pelajaran pada hari ${selectedDay}.`}
-            </Text>
+            
           </View>
         ) : (
           <View style={styles.timelineList}>
@@ -608,7 +627,7 @@ export default function JadwalScreen({ navigation }) {
                 nowMinutes
               );
 
-              const statusStyle = getStatusStyle(status);
+              const statusStyle = getStatusStyle(status, styles);
               const teacherName =
                 teacherMap[item.teacher_id] || null;
               const kelas = getClassRelation(item);
@@ -624,6 +643,8 @@ export default function JadwalScreen({ navigation }) {
               const attended = meeting
                 ? attendanceMap[meeting.id]
                 : null;
+              const canAttend = Boolean(meeting?.presensi_dibuka_at && !meeting?.presensi_ditutup_at && !attended);
+              const onlineUrl = meeting?.meeting_url || '';
 
               const remainingMinutes = Math.max(
                 0,
@@ -741,7 +762,7 @@ export default function JadwalScreen({ navigation }) {
                             <Ionicons
                               name="person"
                               size={14}
-                              color="#A7C5FF"
+                              color={colors.accentText}
                             />
                           </View>
 
@@ -795,8 +816,9 @@ export default function JadwalScreen({ navigation }) {
 
                       {/* STATUS PRESENSI DAN TINDAKAN SESI */}
                       <View style={styles.actionRow}>
-                        <View style={[
+                        <Pressable disabled={!canAttend || !!busyAttendance} onPress={() => handleAttendance(meeting)} style={[
                           styles.attendanceStatus,
+                          canAttend && styles.onlineButton,
                           attended?.status === 'hadir' && styles.attendanceStatusPresent,
                           attended?.status === 'alpa' && styles.attendanceStatusAbsent,
                         ]}>
@@ -808,15 +830,17 @@ export default function JadwalScreen({ navigation }) {
                           <Text style={styles.attendanceStatusText}>
                             {attended?.status
                               ? ATTENDANCE_LABELS[attended.status] || attended.status
-                              : meeting ? 'Belum diabsen' : 'Belum ada pertemuan'}
+                              : canAttend ? (busyAttendance === meeting.id ? 'Menyimpan...' : 'Absen Hadir') : meeting ? 'Presensi belum dibuka / ditutup' : 'Belum ada pertemuan'}
                           </Text>
-                        </View>
+                        </Pressable>
 
                         <Pressable
-                          onPress={() => handleOpenOnline(item)}
+                          disabled={!onlineUrl}
+                          onPress={() => handleOpenOnline(meeting)}
                           style={({ pressed }) => [
                             styles.actionButton,
                             styles.onlineButton,
+                            !onlineUrl && { opacity: 0.45 },
                             pressed && styles.buttonPressed,
                           ]}
                         >
@@ -827,7 +851,7 @@ export default function JadwalScreen({ navigation }) {
                           />
 
                           <Text style={styles.onlineButtonText}>
-                            Masuk Online
+                            {onlineUrl ? "Masuk Online" : "Tidak ada link online"}
                           </Text>
                         </Pressable>
                       </View>
@@ -839,7 +863,7 @@ export default function JadwalScreen({ navigation }) {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </FloatingSafeAreaView>
   );
 }
 
@@ -849,7 +873,16 @@ export default function JadwalScreen({ navigation }) {
 
 const GUTTER = spacing.md + spacing.xs;
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
+  legend: {flexDirection:'row',flexWrap:'wrap',justifyContent:'center',alignItems:'center',gap:12,marginTop:12,width:'100%'},
+  legendItem: {flexDirection:'row',alignItems:'center',gap:5},
+  legendDot: {width:8,height:8,borderRadius:4},
+  legendText: {color:colors.textMuted,fontSize:12},
+  deadlineSection: {marginBottom:spacing.xl,gap:spacing.sm},
+  deadlineCard: {flexDirection:'row',alignItems:'center',gap:12,backgroundColor:colors.card,borderColor:colors.border,borderWidth:1,borderLeftWidth:4,borderRadius:radius.lg,padding:spacing.md},
+  deadlineSubject: {color:colors.primary,fontSize:fontSize.sm,fontWeight:fontWeight.semibold},
+  deadlineGrade: {fontSize:fontSize.lg,fontWeight:fontWeight.bold},
+  noDeadline: {color:colors.textMuted,backgroundColor:colors.card,borderRadius:radius.md,padding:spacing.md,fontSize:fontSize.sm},
   safe: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -898,7 +931,7 @@ const styles = StyleSheet.create({
   },
 
   weekBadgeText: {
-    color: '#A7C5FF',
+    color: colors.accentText,
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,
   },
@@ -1184,7 +1217,7 @@ const styles = StyleSheet.create({
 
   scheduleCardLive: {
     borderColor: 'rgba(54,214,160,0.45)',
-    backgroundColor: '#202126',
+    backgroundColor: colors.cardAlt,
   },
 
   activeTopBar: {
@@ -1251,7 +1284,7 @@ const styles = StyleSheet.create({
   },
 
   statusTextLive: {
-    color: GREEN,
+    color: colors.statusGreen,
   },
 
   statusTextDone: {
@@ -1274,7 +1307,7 @@ const styles = StyleSheet.create({
   },
 
   timeTextLive: {
-    color: GREEN,
+    color: colors.statusGreen,
   },
 
   timeNote: {
@@ -1420,14 +1453,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
-    padding: spacing.xl,
+    padding: spacing.md,
     alignItems: 'center',
     marginTop: spacing.sm,
   },
 
   emptyIcon: {
-    width: 58,
-    height: 58,
+    width: 38,
+    height: 38,
     borderRadius: radius.lg,
     backgroundColor: colors.cardAlt,
     alignItems: 'center',
@@ -1438,7 +1471,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: fontWeight.bold,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
 
   emptyText: {
@@ -1448,4 +1481,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
   },
-});
+}));

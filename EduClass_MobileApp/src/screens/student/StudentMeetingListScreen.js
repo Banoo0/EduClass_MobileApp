@@ -1,3 +1,6 @@
+import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +32,9 @@ function formatMeetingDate(value) {
 }
 
 export default function StudentMeetingListScreen({ route, navigation }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const { user, profile } = useAuth();
   const studentId = user?.uid || user?.id || profile?.id;
   const { classId, className, semester, tahunAjaran } = route.params;
@@ -63,7 +69,7 @@ export default function StudentMeetingListScreen({ route, navigation }) {
   useFocusEffect(useCallback(() => { loadMeetings(); }, [loadMeetings]));
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <FloatingSafeAreaView style={styles.safe} edges={['top']}><AppBackdrop />
       <DashboardHeader variant="siswa" title="Pertemuan" onAvatarPress={() => navigation.getParent()?.navigate('Profil')} />
       <ScrollView
         contentContainerStyle={styles.content}
@@ -87,7 +93,7 @@ export default function StudentMeetingListScreen({ route, navigation }) {
           <View style={styles.empty}>
             <Ionicons name="calendar-outline" size={30} color={colors.textFaint} />
             <Text style={styles.emptyTitle}>Belum ada pertemuan</Text>
-            <Text style={styles.emptyText}>Pertemuan yang dibuat guru akan tampil di sini.</Text>
+            
           </View>
         ) : meetings.map((meeting) => {
           const status = getMeetingStatus(meeting);
@@ -119,11 +125,11 @@ export default function StudentMeetingListScreen({ route, navigation }) {
           );
         })}
       </ScrollView>
-    </SafeAreaView>
+    </FloatingSafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.md, paddingBottom: 36 },
   backButton: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
@@ -152,7 +158,7 @@ const styles = StyleSheet.create({
   meetingDescription: { color: colors.textMuted, fontSize: fontSize.sm, lineHeight: 20, marginTop: 6 },
   dateLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   dateText: { color: colors.textMuted, fontSize: fontSize.xs, flex: 1 },
-  dateTextActive: { color: '#A7C5FF' },
+  dateTextActive: { color: colors.accentText },
   attendanceLine: { flexDirection: 'row', alignItems: 'center', gap: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10, marginTop: 11 },
   attendanceText: { color: colors.textMuted, fontSize: fontSize.xs },
-});
+}));

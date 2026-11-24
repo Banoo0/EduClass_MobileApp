@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +21,7 @@ import { colors, fontSize, fontWeight, radius, spacing } from '../../core/theme'
 import { getStudentDashboard } from '../../services/dashboardService';
 import { formatTodayChip, getScheduleStatus, isDueSoon, isThisWeek } from '../../utils/dateHelper';
 
-const sudahDikumpulkan = (t) => t.status_pengumpulan === 'dikumpulkan';
+const sudahDikumpulkan = (t) => ['dikumpulkan', 'dinilai'].includes(t.status_pengumpulan);
 
 // Semua angka Beranda dihitung dari data mentah dan waktu sekarang, tidak ada yang ditulis mati.
 function buildSummary(data, now) {
@@ -47,25 +51,30 @@ function kalimatMotivasi(selesai, total) {
 }
 
 export default function BerandaScreen({ navigation }) {
-  const { profile } = useAuth();
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
+  const { user, profile } = useAuth();
+  const uid = user?.uid || profile?.id;
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const { data: result, error: err } = await getStudentDashboard();
+    const { data: result, error: err } = await getStudentDashboard(uid);
     if (err) {
+      setData(null);
       setError(err.message || 'Beranda gagal dimuat. Coba lagi.');
       return;
     }
     setData(result);
     setError(null);
-  }, []);
+  }, [uid]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     load().finally(() => setLoading(false));
-  }, [load]);
+  }, [load]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -83,7 +92,7 @@ export default function BerandaScreen({ navigation }) {
   const rasio = s.minggu.total ? s.minggu.selesai / s.minggu.total : 0;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <FloatingSafeAreaView style={styles.safe} edges={['top']}><AppBackdrop />
       <DashboardHeader variant="siswa" title="Beranda" onAvatarPress={() => navigation.navigate('Profil')} />
 
       {loading ? (
@@ -101,7 +110,7 @@ export default function BerandaScreen({ navigation }) {
           <View style={styles.greeting}>
             <View>
               <View style={styles.avatarLarge}>
-                <Ionicons name="person-outline" size={36} color={colors.bg} />
+                <Ionicons name="person-outline" size={36} color={colors.avatarInk} />
               </View>
               <View style={styles.onlineDot} />
             </View>
@@ -125,7 +134,7 @@ export default function BerandaScreen({ navigation }) {
                   size={104}
                   strokeWidth={10}
                   label={`${Math.round(rasio * 100)}%`}
-                  sublabel="Target"
+                  
                   color={colors.success}
                   colorEnd={colors.primary}
                 />
@@ -137,18 +146,18 @@ export default function BerandaScreen({ navigation }) {
                   <Text style={styles.progressTitle}>
                     {s.minggu.selesai}/{s.minggu.total} Tugas Selesai
                   </Text>
-                  <Text style={styles.progressText}>{kalimatMotivasi(s.minggu.selesai, s.minggu.total)}</Text>
+                  
                 </View>
               </View>
 
               {/* Ringkasan 2x2 */}
               <View style={styles.gridRow}>
-                <StatCard variant="danger" icon="alert" badge="Segera" value={s.mendesak.length} label="Tugas Mendesak" style={styles.flex} />
-                <StatCard variant="primary" icon="clipboard-outline" badge="Aktif" value={s.totalAktif} label="Total Tugas" style={styles.flex} />
+                <StatCard variant="danger" icon="alert"  value={s.mendesak.length} label="Tugas Mendesak" style={styles.flex} />
+                <StatCard variant="primary" icon="clipboard-outline" value={data.tugas.length} label="Total Tugas" style={styles.flex} />
               </View>
               <View style={styles.gridRow}>
                 <StatCard variant="success" icon="checkmark-circle-outline" badge="Selesai" value={s.totalSelesai} label="Tugas Selesai" style={styles.flex} />
-                <StatCard variant="neutral" icon="school-outline" badge="Hari Ini" value={s.jadwal.length} label="Kelas Aktif" style={styles.flex} />
+                <StatCard variant="neutral" icon="school-outline" value={data.kelas.length} label="Kelas Aktif" style={styles.flex} />
               </View>
 
               {/* Tugas Mendesak */}
@@ -164,13 +173,13 @@ export default function BerandaScreen({ navigation }) {
                       dueAt={t.deadline}
                       teacher={t.kelas?.guru?.nama_lengkap}
                       info={t.keterangan}
-                      onDetail={keTugas}
-                      onSubmit={keTugas}
+                      onDetail={() => navigation.navigate('Tugas', { screen: 'DetailTugas', params: { assignmentId: t.id } })}
+                      onSubmit={() => navigation.navigate('Tugas', { screen: 'UploadTugas', params: { assignmentId: t.id } })}
                     />
                   ))}
                 </View>
               ) : (
-                <EmptyState icon="happy-outline" text="Tidak ada tugas mendesak. Kamu aman untuk hari ini dan besok!" />
+                <EmptyState icon="happy-outline" text="Tidak ada tugas mendesak" />
               )}
 
               {/* Jadwal Hari Ini */}
@@ -191,7 +200,7 @@ export default function BerandaScreen({ navigation }) {
                   ))}
                 </View>
               ) : (
-                <EmptyState icon="cafe-outline" text="Tidak ada jadwal pelajaran hari ini." />
+                <EmptyState icon="cafe-outline" text="Tidak ada jadwal" />
               )}
               {/* "Lihat Semua" diletakkan di bawah daftar: di header tidak muat bersama chip tanggal */}
               <Pressable onPress={keJadwal} accessibilityRole="link" hitSlop={8} style={({ pressed }) => [styles.footerLink, pressed && { opacity: 0.7 }]}>
@@ -204,13 +213,13 @@ export default function BerandaScreen({ navigation }) {
           )}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </FloatingSafeAreaView>
   );
 }
 
 const GUTTER = spacing.md + spacing.xs;
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -245,4 +254,4 @@ const styles = StyleSheet.create({
   footerLink: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', gap: spacing.xs, marginTop: spacing.md },
   footerLinkText: { color: colors.primary, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   retryHint: { color: colors.textMuted, fontSize: fontSize.md, textAlign: 'center', marginTop: spacing.lg },
-});
+}));

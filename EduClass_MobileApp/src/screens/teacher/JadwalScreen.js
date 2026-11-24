@@ -1,8 +1,13 @@
+import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
+import MonthlyCalendar from '../../components/MonthlyCalendar';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useRef, useEffect } from 'react';
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -57,6 +62,10 @@ const DAY_ORDER = Object.fromEntries(
   DAYS.map((day, index) => [day, index])
 );
 
+const DAY_GAP = Platform.OS === 'web' ? 10 : 5;
+const MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // =====================================================
@@ -77,9 +86,8 @@ function toMinutes(value) {
 }
 
 function getStatus(schedule, selectedDay, today, nowMinutes) {
-  if (selectedDay !== today) {
-    return 'Terjadwal';
-  }
+  if (selectedDay < today) return 'Selesai';
+  if (selectedDay > today) return 'Terjadwal';
 
   const start = toMinutes(schedule.jam_mulai);
   const end = toMinutes(schedule.jam_selesai);
@@ -108,8 +116,11 @@ function getRelationClass(schedule) {
 // =====================================================
 
 export default function JadwalScreen({ navigation }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const { user, profile } = useAuth();
-  const teacherId = user?.id || profile?.id;
+  const teacherId = user?.uid || user?.id || profile?.id;
 
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -118,9 +129,11 @@ export default function JadwalScreen({ navigation }) {
 
   const today = DAY_BY_JS[new Date().getDay()];
 
-  const [selectedDay, setSelectedDay] = useState(
-    DAY_BY_JS[new Date().getDay()]
-  );
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const selectedDay = DAY_BY_JS[selectedDate.getDay()];
+  const selectedKey = dateKey(selectedDate);
+  const todayKey = dateKey(new Date());
+  const isTodaySelected = selectedKey === todayKey;
 
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -294,7 +307,7 @@ export default function JadwalScreen({ navigation }) {
   const nowMinutes =
     now.getHours() * 60 + now.getMinutes();
 
-  const dateLabel = now.toLocaleDateString('id-ID', {
+  const dateLabel = selectedDate.toLocaleDateString('id-ID', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -314,18 +327,18 @@ export default function JadwalScreen({ navigation }) {
 
   const activeCount = todaysSchedules.filter(
     (item) =>
-      getStatus(item, today, today, nowMinutes) ===
+      getStatus(item, todayKey, todayKey, nowMinutes) ===
       'Sedang Berlangsung'
   ).length;
 
   const completedCount = todaysSchedules.filter(
     (item) =>
-      getStatus(item, today, today, nowMinutes) === 'Selesai'
+      getStatus(item, todayKey, todayKey, nowMinutes) === 'Selesai'
   ).length;
 
   const upcomingCount = todaysSchedules.filter(
     (item) =>
-      getStatus(item, today, today, nowMinutes) === 'Mendatang'
+      getStatus(item, todayKey, todayKey, nowMinutes) === 'Mendatang'
   ).length;
 
   // ===================================================
@@ -333,7 +346,7 @@ export default function JadwalScreen({ navigation }) {
   // ===================================================
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <FloatingSafeAreaView style={styles.safe} edges={['top']}><AppBackdrop />
       {/* HEADER YANG SAMA DENGAN BERANDA GURU */}
       <DashboardHeader
         variant="guru"
@@ -352,63 +365,10 @@ export default function JadwalScreen({ navigation }) {
           />
         }
       >
-        {/* PILIH HARI */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.dayTabs}
-        >
-          {DAYS.map((day) => {
-            const selected = selectedDay === day;
-            const isToday = today === day;
-
-            return (
-              <Pressable
-                key={day}
-                onPress={() => setSelectedDay(day)}
-                style={[
-                  styles.dayTab,
-                  selected && styles.dayTabSelected,
-                  isToday && !selected && styles.dayTabToday,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.dayTabText,
-                    selected && styles.dayTabTextSelected,
-                  ]}
-                >
-                  {day}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* JUDUL DAN TANGGAL */}
-        <View style={styles.heading}>
-          <Text style={styles.headingTitle}>
-            {selectedDay === today
-              ? 'Jadwal Mengajar Hari Ini'
-              : `Jadwal Mengajar Hari ${selectedDay}`}
-          </Text>
-
-          <Text style={styles.dateText}>
-            {selectedDay === today
-              ? `${today}, ${dateLabel}`
-              : `Jadwal mingguan • ${selectedDay}`}
-          </Text>
+        <MonthlyCalendar selectedDateKey={selectedKey} schedules={schedules} onChange={key => { const [y,m,d]=key.split('-').map(Number); setSelectedDate(new Date(y,m-1,d)); }} />
+        <View style={[styles.heading,{marginTop:20}]}>
+          <Text style={styles.headingTitle}>{selectedDay}, {dateLabel}</Text>
         </View>
-
-        {selectedDay === today && (
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryPill}>
-              <Text style={styles.summaryText}>
-                {todaysSchedules.length} Sesi Hari Ini
-              </Text>
-            </View>
-          </View>
-        )}
 
         <FormAlert message={error} />
 
@@ -420,15 +380,13 @@ export default function JadwalScreen({ navigation }) {
               color={colors.primary}
             />
 
-            <Text style={styles.emptyText}>
-              Memuat jadwal mengajar...
-            </Text>
+            
           </View>
         ) : daySchedules.length === 0 ? (
           <View style={styles.emptyCard}>
             <Ionicons
               name="calendar-clear-outline"
-              size={34}
+              size={24}
               color={colors.textMuted}
             />
 
@@ -436,11 +394,7 @@ export default function JadwalScreen({ navigation }) {
               Belum ada jadwal
             </Text>
 
-            <Text style={styles.emptyText}>
-              Belum ada jadwal pada hari {selectedDay}.
-              Kamu dapat menambahkan atau mengatur jadwal
-              melalui halaman Kelola Kelas.
-            </Text>
+            
           </View>
         ) : (
           <View style={styles.scheduleList}>
@@ -468,8 +422,8 @@ export default function JadwalScreen({ navigation }) {
 
               const status = getStatus(
                 item,
-                selectedDay,
-                today,
+                selectedKey,
+                todayKey,
                 nowMinutes
               );
 
@@ -556,6 +510,7 @@ export default function JadwalScreen({ navigation }) {
                         variant="outline"
                         onPress={() => openEdit(item)}
                       />
+                      <AppButton title="Buat / Kelola Pertemuan" icon="add-circle-outline" onPress={() => navigation.navigate('KelolaKelas', { screen: 'KelolaPertemuan', params: { classId: item.class_id, className: [subject,kelas?.rombel].filter(Boolean).join(' '), semester: kelas?.semester ?? null, tahunAjaran: kelas?.tahun_ajaran ?? null, jumlahSiswa: null, initialDate: selectedKey, initialStart: formatTime(item.jam_mulai), initialEnd: formatTime(item.jam_selesai) } })} />
                     </View>
                   </View>
                 </View>
@@ -565,7 +520,7 @@ export default function JadwalScreen({ navigation }) {
         )}
 
         {/* RINGKASAN HARI INI */}
-        {selectedDay === today &&
+        {isTodaySelected &&
           todaysSchedules.length > 0 && (
             <View style={styles.daySummary}>
               <Text style={styles.summaryHeading}>
@@ -615,7 +570,7 @@ export default function JadwalScreen({ navigation }) {
         onRequestClose={closeEdit}
       >
         <View style={styles.modalOverlay}>
-          <SafeAreaView style={styles.modalSafe}>
+          <SafeAreaView style={styles.modalSafe}><AppBackdrop />
             <ScrollView
               contentContainerStyle={styles.modalContent}
               keyboardShouldPersistTaps="handled"
@@ -733,7 +688,7 @@ export default function JadwalScreen({ navigation }) {
           </SafeAreaView>
         </View>
       </Modal>
-    </SafeAreaView>
+    </FloatingSafeAreaView>
   );
 }
 
@@ -743,7 +698,7 @@ export default function JadwalScreen({ navigation }) {
 
 const GUTTER = spacing.md + spacing.xs;
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -756,21 +711,54 @@ const styles = StyleSheet.create({
   },
 
   // PILIH HARI
-  dayTabs: {
+  calendarRow: {
     flexDirection: 'row',
-    gap: spacing.xs,
-    paddingBottom: spacing.lg,
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: spacing.lg,
   },
 
-  dayTab: {
-    minWidth: 53,
-    borderRadius: radius.md,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.sm,
+  calendarArrow: {
+    width: 36,
+    height: 44,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
     backgroundColor: colors.cardAlt,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+
+  calendarStrip: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  dayTabs: {
+    flexDirection: 'row',
+    gap: DAY_GAP,
+    paddingBottom: 8,
+  },
+
+  dayTab: {
+    height: 90,
+    flexShrink: 0,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: colors.cardAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
+  dayNumber: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: fontWeight.bold,
+    textAlign: 'center',
   },
 
   dayTabSelected: {
@@ -783,6 +771,7 @@ const styles = StyleSheet.create({
   },
 
   dayTabText: {
+    textAlign: 'center',
     color: colors.textMuted,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.semibold,
@@ -842,15 +831,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
-    padding: spacing.xl,
-    marginTop: spacing.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
   },
 
   emptyTitle: {
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: fontWeight.bold,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
 
   emptyText: {
@@ -982,7 +971,7 @@ const styles = StyleSheet.create({
   },
 
   cardActions: {
-    flexDirection: 'row',
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8,
   },
 
   // RINGKASAN HARI INI
@@ -1125,4 +1114,4 @@ const styles = StyleSheet.create({
   modalCancel: {
     marginTop: spacing.sm,
   },
-});
+}));

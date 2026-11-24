@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
@@ -18,13 +22,6 @@ import { getTeacherDashboard } from '../../services/dashboardService';
 import { formatMulaiDalam, formatSisaWaktu, formatTanggalPanjang, getScheduleStatus, isThisWeek } from '../../utils/dateHelper';
 
 const MAKS_TUGAS = 3;
-
-// Alert.alert tidak melakukan apa-apa di react-native-web, jadi di browser memakai window.alert
-function fiturSegeraHadir(nama) {
-  const pesan = `${nama} sedang dikembangkan.`;
-  if (Platform.OS === 'web') window.alert(`Fitur segera hadir\n\n${pesan}`);
-  else Alert.alert('Fitur segera hadir', pesan);
-}
 
 const jumlahBelumDinilai = (t) => (t.pengumpulan ?? []).filter((p) => p.nilai == null).length;
 
@@ -56,43 +53,38 @@ function catatanWaktu(j, now) {
   return undefined;
 }
 
-function TombolSesi({ status }) {
-  if (status === 'active') {
-    return (
-      <>
-        <AppButton title="Mulai Presensi" icon="people-outline" variant="success" onPress={() => fiturSegeraHadir('Presensi')} style={styles.sessionButton} />
-        <AppButton title="Materi Tayang" icon="easel-outline" variant="outline" onPress={() => fiturSegeraHadir('Materi tayang')} style={[styles.sessionButton, styles.secondaryButton]} />
-      </>
-    );
-  }
-  if (status === 'upcoming') {
-    return (
-      <AppButton title="Lihat RPP & Modul" icon="book-outline" variant="outline" onPress={() => fiturSegeraHadir('RPP & Modul')} style={[styles.secondaryButton, styles.rppButton]} />
-    );
-  }
-  return null;
+function TombolSesi({ onPress }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
+  return <AppButton title="Kelola Pertemuan & Presensi" icon="people-outline" variant="outline" onPress={onPress} style={styles.sessionButton} />;
 }
 
 export default function BerandaScreen({ navigation }) {
-  const { profile } = useAuth();
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
+  const { user, profile } = useAuth();
+  const uid = user?.uid || profile?.id;
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const { data: result, error: err } = await getTeacherDashboard();
+    const { data: result, error: err } = await getTeacherDashboard(uid);
     if (err) {
+      setData(null);
       setError(err.message || 'Beranda gagal dimuat. Coba lagi.');
       return;
     }
     setData(result);
     setError(null);
-  }, []);
+  }, [uid]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     load().finally(() => setLoading(false));
-  }, [load]);
+  }, [load]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -106,7 +98,7 @@ export default function BerandaScreen({ navigation }) {
   const infoGuru = [s.mapel ? `Guru ${s.mapel}` : null, profile?.nomor_induk ? `NIP: ${profile.nomor_induk}` : null].filter(Boolean).join(' • ');
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <FloatingSafeAreaView style={styles.safe} edges={['top']}><AppBackdrop />
       <DashboardHeader variant="guru" title="Beranda" onAvatarPress={() => navigation.navigate('Profil')} />
 
       {loading ? (
@@ -125,7 +117,7 @@ export default function BerandaScreen({ navigation }) {
             <View style={styles.profileGlow} />
             <View style={styles.profileRow}>
               <View style={styles.avatar}>
-                <Ionicons name="person-outline" size={36} color={colors.bg} />
+                <Ionicons name="person-outline" size={36} color={colors.avatarInk} />
               </View>
               <View style={styles.flex}>
                 <Chip label="Aktif Mengajar" tone="success" dot />
@@ -156,7 +148,7 @@ export default function BerandaScreen({ navigation }) {
                   variant="success"
                   icon="checkmark-circle-outline"
                   labelPosition="top"
-                  label="Tugas Selesai"
+                  label="Pengumpulan Tugas"
                   value={s.terkumpul}
                   extra={s.terkumpulMingguIni ? `+${s.terkumpulMingguIni} mgg ini` : undefined}
                   extraColored
@@ -169,16 +161,16 @@ export default function BerandaScreen({ navigation }) {
                   label="Belum Dinilai"
                   value={s.belumDinilai}
                   valueColored
-                  extra="tugas prioritas"
+                  
                   style={styles.flex}
                 />
               </View>
 
               {/* Jadwal Mengajar Hari Ini */}
               <SectionHeader
-                title="Jadwal Mengajar Hari Ini"
+                title="Mengajar hari ini"
                 subtitle={formatTanggalPanjang(now)}
-                chip={{ label: `${s.jadwal.length} Sesi Hari Ini` }}
+                chip={{ label: `${s.jadwal.length} sesi` }}
                 style={styles.section}
               />
               {s.jadwal.length ? (
@@ -194,17 +186,17 @@ export default function BerandaScreen({ navigation }) {
                       title={[j.kelas?.nama_mapel, j.kelas?.rombel].filter(Boolean).join(' ')}
                       location={j.ruangan}
                     >
-                      {j.status === 'done' ? null : <TombolSesi status={j.status} />}
+                      <TombolSesi onPress={() => navigation.navigate('KelolaKelas', { screen: 'KelolaPertemuan', params: { classId: j.class_id, className: [j.kelas?.nama_mapel, j.kelas?.rombel].filter(Boolean).join(' '), semester: j.kelas?.semester, tahunAjaran: j.kelas?.tahun_ajaran, jumlahSiswa: j.kelas?.jumlah_siswa, initialDate: now.format('YYYY-MM-DD'), initialStart: String(j.jam_mulai).slice(0,5), initialEnd: String(j.jam_selesai).slice(0,5) } })} />
                     </ScheduleCard>
                   ))}
                 </View>
               ) : (
-                <EmptyState icon="cafe-outline" text="Tidak ada jadwal mengajar hari ini." />
+                <EmptyState icon="cafe-outline" text="Tidak ada jadwal" />
               )}
 
               {/* Tugas & Pengumpulan */}
               <SectionHeader
-                title="Tugas & Pengumpulan"
+                title="Pengumpulan"
                 actionLabel={`Lihat Semua (${s.dipantau.length})`}
                 onAction={() => navigation.navigate('BuatTugas')}
                 style={styles.section}
@@ -221,12 +213,12 @@ export default function BerandaScreen({ navigation }) {
                       submitted={(t.pengumpulan ?? []).length}
                       total={t.kelas?.jumlah_siswa ?? 0}
                       ungraded={jumlahBelumDinilai(t)}
-                      onPress={() => navigation.navigate('BuatTugas')}
+                      onPress={() => navigation.navigate('BuatTugas', { screen: 'PeriksaTugas', params: { assignment: t } })}
                     />
                   ))}
                 </View>
               ) : (
-                <EmptyState icon="checkmark-done-outline" text="Belum ada tugas yang perlu dipantau. Buat tugas baru lewat tombol + di bawah." />
+                <EmptyState icon="checkmark-done-outline" text="Belum ada tugas" />
               )}
             </>
           ) : (
@@ -234,13 +226,13 @@ export default function BerandaScreen({ navigation }) {
           )}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </FloatingSafeAreaView>
   );
 }
 
 const GUTTER = spacing.md + spacing.xs;
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -263,4 +255,4 @@ const styles = StyleSheet.create({
   sessionButton: { flexGrow: 1, flexBasis: 140, minHeight: 44 },
   rppButton: { minHeight: 44, marginLeft: 'auto' },
   retryHint: { color: colors.textMuted, fontSize: fontSize.md, textAlign: 'center', marginTop: spacing.lg },
-});
+}));

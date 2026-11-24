@@ -1,12 +1,11 @@
 import {
-  collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where,
+  Timestamp, collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where,
 } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { auth, db, storage } from '../core/firebase';
+import { auth, db } from '../core/firebase';
 import { docToObject, toError } from '../core/firestoreHelpers';
 
 const submissionId = (assignmentId, studentId) => `${assignmentId}_${studentId}`;
-const safeName = (name = 'tugas') => name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-100) || 'tugas';
+export const validDriveUrl = (value) => typeof value === 'string' && value.length <= 2048 && /^https:\/\/(?:drive|docs)\.google\.com\/[^\s]+$/i.test(value.trim());
 const profileName = (profile) => profile?.nama_lengkap || profile?.name || '';
 const classLabel = (item) => [item.nama_mapel, item.rombel].filter(Boolean).join(' ');
 
@@ -51,7 +50,7 @@ export async function fetchTeacherAssignments(teacherId) {
       const item = docToObject(assignmentSnap);
       const [classSnap, submissions] = await Promise.all([
         getDoc(doc(db, 'classes', item.class_id)),
-        getDocs(query(collection(db, 'submissions'), where('assignment_id', '==', item.id))),
+        getDocs(query(collection(db, 'submissions'), where('assignment_id', '==', item.id), where('teacher_id', '==', teacherId))),
       ]);
       const klass = classSnap.exists() ? docToObject(classSnap) : {};
       const memberSnap = await getDocs(query(collection(db, 'class_members'), where('class_id', '==', item.class_id), where('teacher_id', '==', teacherId)));
@@ -62,8 +61,9 @@ export async function fetchTeacherAssignments(teacherId) {
   } catch (e) { return { data: [], error: toError(e) }; }
 }
 
-export async function createAssignment({ classItem, teacherId, teacher, judul, deskripsi, deadline, publish = false }) {
+export async function createAssignment({ classItem, teacherId, teacher, judul, deskripsi, deadline, attachmentUrl = '', publish = false }) {
   try {
+    if (attachmentUrl.trim() && !validDriveUrl(attachmentUrl)) throw new Error('Link soal Google Drive tidak valid.');
     const classId = classItem?.id;
     const classSnap = await getDoc(doc(db, 'classes', classId));
     if (!classSnap.exists() || classSnap.data().teacher_id !== teacherId) throw new Error('Kelas tidak ditemukan atau bukan milik akun guru ini.');
@@ -71,7 +71,7 @@ export async function createAssignment({ classItem, teacherId, teacher, judul, d
     await setDoc(assignmentRef, {
       class_id: classId, class_nama: classLabel(classItem), teacher_id: teacherId,
       teacher_nama: profileName(teacher), judul: judul.trim(), deskripsi: deskripsi.trim(),
-      deadline: new Date(deadline).toISOString(), status: publish ? 'terbit' : 'draft',
+      deadline: new Date(deadline).toISOString(), deadline_at: Timestamp.fromDate(new Date(deadline)), attachment_url: attachmentUrl.trim(), status: publish ? 'terbit' : 'draft',
       created_at: serverTimestamp(), updated_at: serverTimestamp(),
     });
     const result = await getDoc(assignmentRef);
@@ -95,25 +95,20 @@ export async function fetchAssignmentSubmissions(assignmentId) {
   } catch (e) { return { data: [], error: toError(e) }; }
 }
 
-export async function submitAssignment({ assignment, studentId, student, file }) {
+export async function submitAssignment({ assignment, studentId, student, url, note = '' }) {
   try {
-    if (!file?.uri || !file?.name) throw new Error('Pilih berkas tugas terlebih dahulu.');
-    if (file.size != null && file.size > 10 * 1024 * 1024) throw new Error('Ukuran berkas maksimal 10 MB.');
+    if (!validDriveUrl(url)) throw new Error('Masukkan link Google Drive atau Google Docs yang valid.');
+    if (note.length > 1000) throw new Error('Catatan maksimal 1000 karakter.');
     const assignmentSnap = await getDoc(doc(db, 'assignments', assignment.id));
-    if (!assignmentSnap.exists() || assignmentSnap.data().status !== 'terbit') throw new Error('Tugas ini belum tersedia untuk dikumpulkan.');
-    const path = `assignments/${assignment.id}/${studentId}/${Date.now()}_${safeName(file.name)}`;
-    const blob = await (await fetch(file.uri)).blob();
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, blob, { contentType: file.mimeType || 'application/octet-stream' });
+    if (!assignmentSnap.exists() || assignmentSnap.data().status !== 'terbit') throw new Error('Tugas belum tersedia.');
+    const a = assignmentSnap.data();
     const refDoc = doc(db, 'submissions', submissionId(assignment.id, studentId));
     const existing = await getDoc(refDoc);
-    await setDoc(refDoc, {
-      assignment_id: assignment.id, class_id: assignment.class_id, teacher_id: assignment.teacher_id,
-      student_id: studentId, student_nama: profileName(student), status: 'dikumpulkan',
-      file_path: path, file_name: file.name, file_type: file.mimeType || '',
-      submitted_at: serverTimestamp(), nilai: existing.exists() ? (existing.data().nilai ?? null) : null,
-      catatan_guru: existing.exists() ? (existing.data().catatan_guru || '') : '',
-    }, { merge: true });
+    if (existing.exists() && existing.data().status !== 'perlu_revisi') throw new Error('Tugas sudah dikumpulkan.');
+    if (!existing.exists() && Date.now() > new Date(a.deadline).getTime()) throw new Error('Tenggat pengumpulan telah berakhir.');
+    const payload = { submission_url: url.trim(), student_note: note.trim(), status: 'dikumpulkan', submitted_at: serverTimestamp() };
+    if (existing.exists()) await updateDoc(refDoc, payload);
+    else await setDoc(refDoc, { ...payload, assignment_id: assignment.id, class_id: a.class_id, teacher_id: a.teacher_id, student_id: studentId, student_nama: profileName(student), nilai: null, catatan_guru: '' });
     const snap = await getDoc(refDoc);
     return { data: docToObject(snap), error: null };
   } catch (e) { return { data: null, error: toError(e) }; }
@@ -130,11 +125,6 @@ export async function gradeSubmission({ submissionId: id, nilai, catatan, status
     });
     return { data: null, error: null };
   } catch (e) { return { data: null, error: toError(e) }; }
-}
-
-export async function getAssignmentFileUrl(filePath) {
-  try { return { data: await getDownloadURL(ref(storage, filePath)), error: null }; }
-  catch (e) { return { data: null, error: toError(e) }; }
 }
 
 export function currentStudentId() { return auth.currentUser?.uid || null; }

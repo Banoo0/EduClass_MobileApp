@@ -1,7 +1,11 @@
+import { ThemeProvider as NavigationThemeProvider, useTheme as useNavigationTheme } from '@react-navigation/native';
+import { renderFocusedTabScene } from '../components/FocusedTabScene';
+import { useAppTheme } from '../context/ThemeContext';
+import FloatingTabBar, { FloatingDockProvider } from '../components/FloatingTabBar';
+import PrivateChatScreen from '../screens/shared/PrivateChatScreen';
 
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
 
 import BerandaScreen from '../screens/student/BerandaScreen';
 import KelasScreen from '../screens/student/KelasScreen';
@@ -20,7 +24,9 @@ const KelasStack = createNativeStackNavigator();
 const TugasStack = createNativeStackNavigator();
 
 function TugasNavigator() {
-  return <TugasStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+  const { colors, mode: appThemeMode } = useAppTheme();
+
+  return <TugasStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}>
     <TugasStack.Screen name="DaftarTugas" component={TugasScreen} />
     <TugasStack.Screen name="DetailTugas" component={DetailTugasScreen} />
     <TugasStack.Screen name="UploadTugas" component={UploadFileScreen} />
@@ -30,11 +36,13 @@ function TugasNavigator() {
 // Stack di dalam tab Kelas.
 // Siswa bisa membuka halaman gabung, lalu kembali ke daftar kelas.
 function KelasNavigator() {
+  const { colors, mode: appThemeMode } = useAppTheme();
+
   return (
     <KelasStack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: colors.bg },
+        contentStyle: { backgroundColor: 'transparent' },
       }}
     >
       <KelasStack.Screen
@@ -50,6 +58,7 @@ function KelasNavigator() {
         name="DaftarPertemuan"
         component={StudentMeetingListScreen}
       />
+      <KelasStack.Screen name="ChatPribadi" component={PrivateChatScreen} />
     </KelasStack.Navigator>
   );
 }
@@ -63,28 +72,19 @@ const ICONS = {
 };
 
 export default function StudentTabs() {
+  const { colors, mode: appThemeMode } = useAppTheme();
+
+  const navigationTheme = useNavigationTheme();
+  const transparentTheme = { ...navigationTheme, colors: { ...navigationTheme.colors, background: 'transparent' } };
+
   return (
+    <FloatingDockProvider>
+    <NavigationThemeProvider value={transparentTheme}>
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopColor: colors.border,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-        },
-        tabBarIcon: ({ color, size, focused }) => (
-          <Ionicons
-            name={ICONS[route.name][focused ? 0 : 1]}
-            size={size}
-            color={color}
-          />
-        ),
-      })}
+      screenLayout={renderFocusedTabScene}
+      detachInactiveScreens={true}
+      tabBar={(props) => <FloatingTabBar {...props} icons={ICONS} />}
+      screenOptions={{ headerShown: false, freezeOnBlur: false, animation: 'none', sceneStyle: { backgroundColor: 'transparent' }, tabBarStyle: { position: 'absolute', backgroundColor: 'transparent', borderTopWidth: 0 } }}
     >
       <Tab.Screen
         name="Beranda"
@@ -111,5 +111,7 @@ export default function StudentTabs() {
         component={ProfilScreen}
       />
     </Tab.Navigator>
+    </NavigationThemeProvider>
+    </FloatingDockProvider>
   );
 }

@@ -1,3 +1,4 @@
+import { clearDeviceReminders } from '../utils/deviceReminders';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../core/firebase';
@@ -61,7 +62,7 @@ export function AuthProvider({ children }) {
       loading,
       signIn: signInWithEmail,
       signUp: signUpWithEmail,
-      signOut: signOutUser,
+      signOut: async () => { await clearDeviceReminders(); return signOutUser(); },
       refreshProfile,
     }),
     [user, profile, profileState.error, loading, refreshProfile]

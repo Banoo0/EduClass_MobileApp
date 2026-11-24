@@ -1,3 +1,4 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
@@ -6,6 +7,8 @@ import { colors } from '../core/theme';
 const Stack = createNativeStackNavigator();
 
 export default function AuthStack() {
+  const { colors, mode: appThemeMode } = useAppTheme();
+
   return (
     <Stack.Navigator
       initialRouteName="Login"

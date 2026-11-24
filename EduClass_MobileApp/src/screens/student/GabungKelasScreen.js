@@ -1,3 +1,6 @@
+import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
 
 import { useState } from 'react';
 import {
@@ -34,6 +37,9 @@ function notify(title, message) {
 }
 
 export default function GabungKelasScreen({ navigation }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const [token, setToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -81,14 +87,14 @@ export default function GabungKelasScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <FloatingSafeAreaView style={styles.safe} edges={['top']}><AppBackdrop />
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
         {/* Tombol kembali */}
         <AppButton
-          title="Kembali ke Kelas"
+          title="Kembali"
           icon="arrow-back-outline"
           variant="outline"
           onPress={() => navigation.goBack()}
@@ -108,8 +114,7 @@ export default function GabungKelasScreen({ navigation }) {
           <Text style={styles.title}>Gabung Kelas</Text>
 
           <Text style={styles.subtitle}>
-            Masukkan token yang diberikan oleh guru untuk bergabung
-            dengan kelas.
+            Masukkan token kelas dari gurumu.
           </Text>
         </View>
 
@@ -120,8 +125,7 @@ export default function GabungKelasScreen({ navigation }) {
           <Text style={styles.formTitle}>Token Kelas</Text>
 
           <Text style={styles.formSubtitle}>
-            Pastikan kode yang kamu masukkan sesuai dengan token
-            dari guru.
+            Gunakan token yang masih aktif.
           </Text>
 
           <AppInput
@@ -140,7 +144,7 @@ export default function GabungKelasScreen({ navigation }) {
           />
 
           <AppButton
-            title="Gabung Sekarang"
+            title="Gabung"
             icon="enter-outline"
             onPress={handleJoin}
             loading={loading}
@@ -162,20 +166,18 @@ export default function GabungKelasScreen({ navigation }) {
             </Text>
 
             <Text style={styles.infoText}>
-              Minta token kelas kepada guru mata pelajaranmu.
-              Kamu hanya bisa bergabung menggunakan token yang
-              valid dan masih aktif.
+              Hubungi guru pengampu untuk mendapatkan token.
             </Text>
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </FloatingSafeAreaView>
   );
 }
 
 const GUTTER = spacing.md + spacing.xs;
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -258,4 +260,4 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     lineHeight: 21,
   },
-});
+}));

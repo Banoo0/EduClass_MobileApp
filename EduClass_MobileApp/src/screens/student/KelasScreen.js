@@ -1,3 +1,6 @@
+import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
 
 import { useCallback, useState } from 'react';
 import {
@@ -86,6 +89,9 @@ function getSubjectIcon(subject = '') {
 }
 
 export default function KelasScreen({ navigation }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const { user, profile } = useAuth();
   const studentId = user?.uid || user?.id || profile?.id;
 
@@ -246,11 +252,11 @@ export default function KelasScreen({ navigation }) {
   // ================================================
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <FloatingSafeAreaView style={styles.safe} edges={['top']}><AppBackdrop />
       {/* Header konsisten dengan Beranda siswa */}
       <DashboardHeader
         variant="siswa"
-        title="Beranda"
+        title="Kelas"
         onAvatarPress={() => navigation.getParent()?.navigate('Profil')}
       />
 
@@ -268,9 +274,7 @@ export default function KelasScreen({ navigation }) {
         }
       >
         {/* JUDUL HALAMAN */}
-        <View style={styles.pageHeading}>
-          <Text style={styles.pageTitle}>Kelas Saya</Text>
-        </View>
+        
 
         <FormAlert message={error} />
 
@@ -281,24 +285,23 @@ export default function KelasScreen({ navigation }) {
               <Ionicons
                 name="key"
                 size={27}
-                color="#FFB547"
+                color={colors.statusOrange}
               />
             </View>
 
             <View style={styles.joinHeaderText}>
               <Text style={styles.joinTitle}>
-                Gabung Kelas Baru
+                Gabung kelas
               </Text>
+              <Text style={styles.joinDescription}>Masukkan token kelas dari gurumu.</Text>
 
-              <Text style={styles.joinDescription}>
-                Masukkan token kelas yang diberikan oleh gurumu
-              </Text>
+              
             </View>
           </View>
 
           <AppInput
             icon="keypad-outline"
-            placeholder="CONTOH: KIM-9C-03"
+            placeholder="Token kelas"
             value={token}
             onChangeText={(value) => setToken(value.toUpperCase())}
             autoCapitalize="characters"
@@ -329,7 +332,7 @@ export default function KelasScreen({ navigation }) {
                 />
 
                 <Text style={styles.joinButtonText}>
-                  + Join Kelas
+                  Gabung
                 </Text>
               </>
             )}
@@ -339,7 +342,7 @@ export default function KelasScreen({ navigation }) {
         {/* JUDUL DAFTAR KELAS */}
         <View style={styles.listHeading}>
           <Text style={styles.listHeadingTitle}>
-            Daftar Kelas Terdaftar
+            Kelas saya
           </Text>
 
           <Text style={styles.semesterText}>
@@ -361,7 +364,7 @@ export default function KelasScreen({ navigation }) {
         ) : classes.length === 0 ? (
           <EmptyState
             icon="school-outline"
-            text="Kamu belum bergabung dengan kelas mana pun. Masukkan token dari guru untuk mulai bergabung."
+            text="Belum ada kelas"
           />
         ) : (
           <View style={styles.classList}>
@@ -401,7 +404,7 @@ export default function KelasScreen({ navigation }) {
                           size={15}
                           color={colors.textMuted}
                         />
-//mancing
+
                         <Text
                           style={styles.teacherName}
                           numberOfLines={1}
@@ -494,7 +497,11 @@ export default function KelasScreen({ navigation }) {
 
                       <View style={styles.detailDivider} />
 
-                      <View style={styles.inlineSectionHeading}>
+                      <Pressable accessibilityRole="button" onPress={() => navigation.navigate('ChatPribadi', { classId: item.id })} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, borderRadius: 12, backgroundColor: colors.primarySoft, marginBottom: 12 }}>
+                <Ionicons name="chatbubbles-outline" size={20} color={colors.primary} />
+                <Text style={{ color: colors.primary, fontWeight: '700' }}>Chat pribadi</Text>
+              </Pressable>
+              <View style={styles.inlineSectionHeading}>
                         <Text style={styles.detailSectionTitle}>Daftar Pertemuan</Text>
                         <Pressable
                           onPress={() => navigation.navigate('DaftarPertemuan', {
@@ -507,18 +514,16 @@ export default function KelasScreen({ navigation }) {
                           accessibilityRole="button"
                         >
                           <Ionicons name="list-outline" size={17} color="#FFFFFF" />
-                          <Text style={styles.meetingsButtonText}>Lihat Pertemuan</Text>
+                          <Text style={styles.meetingsButtonText}>Lihat</Text>
                         </Pressable>
                       </View>
 
-                      <Text style={styles.noSchedule}>
-                        Lihat topik, tanggal, dan waktu setiap pertemuan kelas.
-                      </Text>
+                      
 
                       <View style={styles.detailDivider} />
 
                       <Text style={styles.detailSectionTitle}>
-                        Jadwal Mingguan (Opsional)
+                        Jadwal mingguan
                       </Text>
 
                       {schedules.length ? (
@@ -589,12 +594,15 @@ export default function KelasScreen({ navigation }) {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </FloatingSafeAreaView>
   );
 }
 
 // Baris informasi untuk detail kelas.
 function DetailRow({ icon, label, value }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   return (
     <View style={styles.detailRow}>
       <Ionicons
@@ -616,7 +624,7 @@ function DetailRow({ icon, label, value }) {
 
 const GUTTER = spacing.md + spacing.xs;
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -686,8 +694,8 @@ const styles = StyleSheet.create({
   joinDescription: {
     color: colors.textMuted,
     fontSize: fontSize.sm,
-    lineHeight: 21,
-    marginTop: spacing.xs,
+    lineHeight: 18,
+    marginTop: 4,
   },
 
   joinButton: {
@@ -872,7 +880,7 @@ const styles = StyleSheet.create({
   },
 
   taskChipText: {
-    color: '#FFB4B4',
+    color: colors.statusRed,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.semibold,
   },
@@ -1031,4 +1039,4 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     lineHeight: 20,
   },
-});
+}));

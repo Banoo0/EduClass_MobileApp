@@ -1,4 +1,7 @@
-import { useCallback, useMemo, useState } from 'react';
+import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import { ActivityIndicator, Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -9,7 +12,7 @@ import AppInput from '../../components/AppInput';
 import FormAlert from '../../components/FormAlert';
 import { useAuth } from '../../context/AuthContext';
 import { colors, fontSize, fontWeight, radius, spacing } from '../../core/theme';
-import { createMeeting, deleteMeeting, fetchClassMeetings, fetchMeetingRoster, saveMeetingAttendance, setMeetingAttendanceOpen, updateMeeting } from '../../services/meetingService';
+import { createMeeting, deleteMeeting, fetchClassMeetings, fetchMeetingMemberCount, validateMeetingUrl, fetchMeetingRoster, saveMeetingAttendance, setMeetingAttendanceOpen, updateMeeting } from '../../services/meetingService';
 
 const ATTENDANCE_STATUSES = [
   { value: 'hadir', label: 'Hadir' },
@@ -81,17 +84,28 @@ function isAttendanceOpen(meeting) {
 }
 
 export default function MeetingManagementScreen({ route, navigation }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const { user, profile } = useAuth();
   const teacherId = user?.uid || user?.id || profile?.id;
-  const { classId, className, semester, tahunAjaran, jumlahSiswa } = route.params;
+  const { classId, className, semester, tahunAjaran, jumlahSiswa, initialDate, initialStart, initialEnd } = route.params;
   const [meetings, setMeetings] = useState([]);
   const [rosters, setRosters] = useState({});
   const [expandedId, setExpandedId] = useState(null);
-  const [tanggal, setTanggal] = useState(todayString());
-  const [jamMulai, setJamMulai] = useState('08:30');
-  const [jamSelesai, setJamSelesai] = useState('10:00');
+  const [tanggal, setTanggal] = useState(initialDate || todayString());
+  const [jamMulai, setJamMulai] = useState(initialStart || '08:30');
+  const [jamSelesai, setJamSelesai] = useState(initialEnd || '10:00');
   const [topik, setTopik] = useState('');
   const [deskripsi, setDeskripsi] = useState('');
+  const [meetingUrl, setMeetingUrl] = useState('');
+  const [editMeetingUrl, setEditMeetingUrl] = useState('');
+  const [memberCount, setMemberCount] = useState(jumlahSiswa ?? null);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    if (teacherId) fetchMeetingMemberCount(classId, teacherId).then(n => { if (active) setMemberCount(n); }).catch(e => console.error('memberCount', e));
+    return () => { active = false; };
+  }, [classId, teacherId]));
   const [editingId, setEditingId] = useState(null);
   const [editTanggal, setEditTanggal] = useState('');
   const [editJamMulai, setEditJamMulai] = useState('');
@@ -101,7 +115,15 @@ export default function MeetingManagementScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(Boolean(initialDate));
+  useEffect(() => {
+    if (initialDate) {
+      setTanggal(initialDate);
+      setJamMulai(initialStart || '08:30');
+      setJamSelesai(initialEnd || '10:00');
+      setShowCreate(true);
+    }
+  }, [classId, initialDate, initialStart, initialEnd]);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState('');
 
@@ -157,16 +179,18 @@ export default function MeetingManagementScreen({ route, navigation }) {
         jam_selesai: jamSelesai,
         topik,
         deskripsi,
+        meeting_url: validateMeetingUrl(meetingUrl),
       });
       if (createError) throw createError;
       setTopik('');
       setDeskripsi('');
+      setMeetingUrl('');
       setShowCreate(false);
       await loadMeetings(true);
       notify('Pertemuan dibuat', `Pertemuan ${nextNumber} berhasil ditambahkan.`);
     } catch (err) {
+      console.error('createMeeting', err);
       setError(err.message || 'Gagal membuat pertemuan.');
-      await loadMeetings(true);
     } finally {
       setCreating(false);
     }
@@ -179,6 +203,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
     setEditJamSelesai(meeting.jam_selesai?.slice(0, 5) || '10:00');
     setEditTopik(meeting.topik || '');
     setEditDeskripsi(meeting.deskripsi || '');
+    setEditMeetingUrl(meeting.meeting_url || '');
     setError('');
   };
 
@@ -198,6 +223,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
         jam_selesai: editJamSelesai,
         topik: editTopik,
         deskripsi: editDeskripsi,
+        meeting_url: validateMeetingUrl(editMeetingUrl),
       });
       if (saveError) throw saveError;
       setMeetings((previous) => previous.map((row) => row.id === meetingId ? data : row)
@@ -244,6 +270,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
       if (updateError) throw updateError;
       setMeetings((previous) => previous.map((row) => row.id === meeting.id ? { ...row, ...data } : row));
     } catch (err) {
+      console.error('setMeetingAttendanceOpen', err);
       setError(err.message || 'Gagal mengubah status presensi.');
     } finally {
       setBusyId(null);
@@ -256,7 +283,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
       return;
     }
     setExpandedId(meeting.id);
-    if (rosters[meeting.id]) return;
+
     setBusyId(meeting.id);
     setError('');
     try {
@@ -289,10 +316,10 @@ export default function MeetingManagementScreen({ route, navigation }) {
     }
   };
 
-  const classMeta = [semester && `Semester ${semester}`, tahunAjaran, `${jumlahSiswa || 0} Siswa`].filter(Boolean).join(' • ');
+  const classMeta = [semester && `Semester ${semester}`, tahunAjaran, `${memberCount ?? '—'} Siswa`].filter(Boolean).join(' • ');
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <FloatingSafeAreaView style={styles.safe} edges={['top']}><AppBackdrop />
       <DashboardHeader variant="guru" title="Daftar Pertemuan" onAvatarPress={() => navigation.getParent()?.navigate('Profil')} />
       <ScrollView
         contentContainerStyle={styles.content}
@@ -316,7 +343,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
             <View style={styles.formNumberBadge}><Text style={styles.formNumberText}>{nextNumber}</Text></View>
             <View style={styles.formHeaderText}>
               <Text style={styles.sectionTitle}>Pertemuan {nextNumber}</Text>
-              <Text style={styles.helperInline}>Hari otomatis mengikuti tanggal.</Text>
+              
             </View>
           </View>
           <AppInput label="Tanggal" required value={tanggal} onChangeText={setTanggal} placeholder="YYYY-MM-DD" autoCapitalize="none" />
@@ -330,19 +357,21 @@ export default function MeetingManagementScreen({ route, navigation }) {
           </View>
           <AppInput label="Judul pertemuan" required value={topik} onChangeText={setTopik} placeholder="Contoh: Pengantar Aljabar" />
           <AppInput label="Deskripsi pertemuan" required value={deskripsi} onChangeText={setDeskripsi} placeholder="Materi atau kegiatan yang dibahas" multiline textAlignVertical="top" style={styles.descriptionInput} />
+          <AppInput label="Link Google Meet / Zoom (opsional)" value={meetingUrl} onChangeText={setMeetingUrl} autoCapitalize="none" keyboardType="url" placeholder="https://meet.google.com/..." />
+          <Text style={styles.helperInline}>Isi link hanya untuk pertemuan online.</Text>
           <AppButton title={`Tambah Pertemuan ${nextNumber}`} icon="add-circle-outline" loading={creating} disabled={creating} onPress={handleCreate} />
         </View> : null}
 
         <FormAlert message={error} />
         <View style={styles.listHeading}>
-          <Text style={styles.sectionTitle}>Daftar Pertemuan</Text>
+          
           <Text style={styles.count}>{meetings.length}</Text>
         </View>
 
         {loading ? <ActivityIndicator color={colors.primary} style={styles.loading} /> : meetings.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="calendar-outline" size={28} color={colors.textFaint} />
-            <Text style={styles.emptyText}>Belum ada pertemuan untuk kelas ini.</Text>
+            <Text style={styles.emptyText}>Belum ada pertemuan</Text>
           </View>
         ) : meetings.map((meeting) => {
           const status = meetingStatus(meeting);
@@ -363,6 +392,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
               </View>
               <Text style={styles.meetingTitle}>{meeting.topik || 'Tanpa judul'}</Text>
               {meeting.deskripsi ? <Text style={styles.meetingDescription}>{meeting.deskripsi}</Text> : null}
+              {meeting.meeting_url ? <Text style={styles.dateText}>Online • {meeting.meeting_url}</Text> : null}
               <View style={styles.dateLine}>
                 <Ionicons name="time-outline" size={16} color={status === 'Aktif' ? colors.primary : colors.textMuted} />
                 <Text style={styles.dateText}>{dateLabel(meeting.tanggal)} • {meeting.jam_mulai?.slice(0, 5) || '--:--'} – {meeting.jam_selesai?.slice(0, 5) || '--:--'} WIB</Text>
@@ -380,6 +410,8 @@ export default function MeetingManagementScreen({ route, navigation }) {
                   </View>
                   <AppInput label="Judul pertemuan" required value={editTopik} onChangeText={setEditTopik} placeholder="Judul" />
                   <AppInput label="Deskripsi pertemuan" required value={editDeskripsi} onChangeText={setEditDeskripsi} placeholder="Deskripsi" multiline textAlignVertical="top" style={styles.descriptionInput} />
+                  <AppInput label="Link Google Meet / Zoom (opsional)" value={editMeetingUrl} onChangeText={setEditMeetingUrl} autoCapitalize="none" keyboardType="url" placeholder="https://meet.google.com/..." />
+                  <Text style={styles.helperInline}>Isi link hanya untuk pertemuan online.</Text>
                   <View style={styles.managementActions}>
                     <AppButton title="Simpan" icon="save-outline" loading={busyId === meeting.id} disabled={busyId === meeting.id} onPress={() => handleUpdate(meeting.id)} />
                     <AppButton title="Batal" variant="outline" disabled={busyId === meeting.id} onPress={() => setEditingId(null)} />
@@ -433,11 +465,11 @@ export default function MeetingManagementScreen({ route, navigation }) {
           );
         })}
       </ScrollView>
-    </SafeAreaView>
+    </FloatingSafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.md, paddingBottom: 36 },
   backButton: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
@@ -453,7 +485,7 @@ const styles = StyleSheet.create({
   formNumberText: { color: colors.primary, fontWeight: fontWeight.bold },
   formHeaderText: { flex: 1 },
   sectionTitle: { color: colors.text, fontSize: fontSize.lg, fontWeight: fontWeight.bold },
-  helperInline: { color: colors.textMuted, fontSize: fontSize.xs, marginTop: 4 },
+  helperInline: { color: colors.textMuted, fontSize: fontSize.sm, lineHeight: 18, marginBottom: 8 },
   dayPreview: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.primarySoft, borderRadius: radius.sm, padding: 10, marginTop: -6, marginBottom: 14 },
   dayPreviewText: { color: colors.text, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   timeRow: { flexDirection: 'row', gap: spacing.sm },
@@ -509,4 +541,4 @@ const styles = StyleSheet.create({
   statusOptionSelected: { backgroundColor: colors.primary },
   statusOptionText: { color: colors.textMuted, fontSize: 10, fontWeight: fontWeight.semibold },
   statusOptionTextSelected: { color: '#fff' },
-});
+}));

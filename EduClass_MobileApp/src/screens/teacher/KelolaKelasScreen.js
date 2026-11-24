@@ -1,3 +1,6 @@
+import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
 
 import { useCallback, useState } from 'react';
 import {
@@ -233,6 +236,9 @@ function getLocation(schedule) {
 // =====================================================
 
 function DayPicker({ value, onChange }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   return (
     <View style={styles.dayGrid}>
       {DAYS.map((day) => {
@@ -267,6 +273,9 @@ function DayPicker({ value, onChange }) {
 // =====================================================
 
 export default function KelolaKelasScreen({ navigation }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const { user, profile } = useAuth();
   const teacherId = user?.uid || user?.id || profile?.id;
 
@@ -746,7 +755,7 @@ export default function KelolaKelasScreen({ navigation }) {
     <View style={styles.editForm}>
       <View style={styles.inlineSectionHeading}>
         <Text style={styles.inlineSectionTitle}>
-          Edit Informasi Kelas
+          Edit Informasi
         </Text>
 
         <Pressable onPress={cancelEditing} hitSlop={10}>
@@ -884,10 +893,10 @@ export default function KelolaKelasScreen({ navigation }) {
               size={27}
               color={
                 item.nama_mapel?.toLowerCase().includes('matematika')
-                  ? '#A7C5FF'
+                  ? colors.accentText
                   : item.nama_mapel?.toLowerCase().includes('sejarah')
                     ? ORANGE
-                    : '#A7C5FF'
+                    : colors.accentText
               }
             />
           </View>
@@ -974,7 +983,7 @@ export default function KelolaKelasScreen({ navigation }) {
             <Ionicons
               name="key-outline"
               size={17}
-              color={colors.guru}
+              color={colors.accentText}
             />
 
             <Text style={styles.metricLabel}>Token</Text>
@@ -987,7 +996,7 @@ export default function KelolaKelasScreen({ navigation }) {
               <Ionicons
                 name="copy-outline"
                 size={16}
-                color={colors.guru}
+                color={colors.accentText}
               />
             </View>
           </Pressable>
@@ -1005,7 +1014,7 @@ export default function KelolaKelasScreen({ navigation }) {
             ]}
           >
             <Text style={styles.viewClassText}>
-              {expanded ? 'Tutup Detail' : 'Lihat Kelas'}
+              {expanded ? 'Tutup' : 'Lihat Kelas'}
             </Text>
 
             <Ionicons
@@ -1036,7 +1045,7 @@ export default function KelolaKelasScreen({ navigation }) {
         {expanded ? (
           <View style={styles.expandedDetails}>
             <Text style={styles.detailHeading}>
-              Informasi Kelas
+              Informasi
             </Text>
 
             <DetailRow
@@ -1056,7 +1065,11 @@ export default function KelolaKelasScreen({ navigation }) {
 
             <View style={styles.divider} />
 
-            <View style={styles.inlineSectionHeading}>
+            <Pressable accessibilityRole="button" onPress={() => navigation.navigate('ChatPribadi', { classId: item.id })} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, borderRadius: 12, backgroundColor: colors.primarySoft, marginBottom: 12 }}>
+                <Ionicons name="chatbubbles-outline" size={20} color={colors.primary} />
+                <Text style={{ color: colors.primary, fontWeight: '700' }}>Chat pribadi</Text>
+              </Pressable>
+              <View style={styles.inlineSectionHeading}>
               <Text style={styles.detailHeading}>Daftar Pertemuan</Text>
               <Pressable
                 onPress={() => navigation.navigate('KelolaPertemuan', {
@@ -1074,15 +1087,13 @@ export default function KelolaKelasScreen({ navigation }) {
                 <Text style={styles.addScheduleText}>Kelola</Text>
               </Pressable>
             </View>
-            <Text style={styles.emptyScheduleText}>
-              Tambahkan pertemuan satu per satu, lengkap dengan tanggal dan jam.
-            </Text>
+            
 
             <View style={styles.divider} />
 
             <View style={styles.inlineSectionHeading}>
               <Text style={styles.detailHeading}>
-                Jadwal Mingguan (Opsional)
+                Jadwal mingguan
               </Text>
 
               <Pressable
@@ -1211,7 +1222,7 @@ export default function KelolaKelasScreen({ navigation }) {
   // ===================================================
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <FloatingSafeAreaView style={styles.safe} edges={['top']}><AppBackdrop />
       <DashboardHeader
         variant="guru"
         title="Kelola Kelas"
@@ -1235,7 +1246,7 @@ export default function KelolaKelasScreen({ navigation }) {
 
         <View style={styles.pageHeading}>
           <View style={styles.pageHeadingText}>
-            <Text style={styles.pageTitle}>Kelola Kelas</Text>
+            
           </View>
 
           <Pressable
@@ -1255,7 +1266,7 @@ export default function KelolaKelasScreen({ navigation }) {
             />
 
             <Text style={styles.createButtonText}>
-              {showCreateForm ? 'Tutup Form' : 'Buat Kelas'}
+              {showCreateForm ? 'Tutup' : 'Buat Kelas'}
             </Text>
           </Pressable>
         </View>
@@ -1331,7 +1342,7 @@ export default function KelolaKelasScreen({ navigation }) {
         <View style={styles.sectionHeader}>
           <View style={styles.sectionHeaderText}>
             <Text style={styles.sectionHeading}>
-              Semester {academicTerm.semester} {academicTerm.year}
+              {academicTerm.semester} • {academicTerm.year}
             </Text>
           </View>
 
@@ -1339,7 +1350,7 @@ export default function KelolaKelasScreen({ navigation }) {
             <View style={styles.runningDot} />
 
             <Text style={styles.runningBadgeText}>
-              {currentClasses.length} Kelas Berjalan
+              {currentClasses.length} kelas
             </Text>
           </View>
         </View>
@@ -1359,9 +1370,7 @@ export default function KelolaKelasScreen({ navigation }) {
 
             <Text style={styles.emptyTitle}>Belum Ada Kelas</Text>
 
-              <Text style={styles.emptyDescription}>
-                Tekan Buat Kelas untuk menambahkan kelas. Jadwal pertemuan bisa ditambahkan setelahnya.
-              </Text>
+              
           </View>
         ) : (
           <View style={styles.classList}>
@@ -1373,7 +1382,7 @@ export default function KelolaKelasScreen({ navigation }) {
         <View style={styles.archiveHeading}>
           <View style={styles.archiveHeadingText}>
             <Text style={styles.archiveTitle}>
-              Arsip Kelas Terdahulu
+              Arsip kelas
             </Text>
           </View>
 
@@ -1392,7 +1401,7 @@ export default function KelolaKelasScreen({ navigation }) {
           </View>
         ) : null}
       </ScrollView>
-    </SafeAreaView>
+    </FloatingSafeAreaView>
   );
 }
 
@@ -1401,6 +1410,9 @@ export default function KelolaKelasScreen({ navigation }) {
 // =====================================================
 
 function DetailRow({ label, value }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
@@ -1415,7 +1427,7 @@ function DetailRow({ label, value }) {
 
 const GUTTER = spacing.md + spacing.xs;
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -1548,7 +1560,7 @@ const styles = StyleSheet.create({
   },
 
   dayButtonTextSelected: {
-    color: colors.guru,
+    color: colors.accentText,
     fontWeight: fontWeight.bold,
   },
 
@@ -1604,7 +1616,7 @@ const styles = StyleSheet.create({
   },
 
   runningBadgeText: {
-    color: GREEN,
+    color: colors.statusGreen,
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,
   },
@@ -1706,7 +1718,7 @@ const styles = StyleSheet.create({
   },
 
   activeText: {
-    color: GREEN,
+    color: colors.statusGreen,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
   },
@@ -1747,7 +1759,7 @@ const styles = StyleSheet.create({
   },
 
   taskValue: {
-    color: ORANGE,
+    color: colors.statusOrange,
   },
 
   tokenMetric: {
@@ -1767,7 +1779,7 @@ const styles = StyleSheet.create({
   },
 
   tokenMetricValue: {
-    color: colors.guru,
+    color: colors.accentText,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.semibold,
     flexShrink: 1,
@@ -1904,7 +1916,7 @@ const styles = StyleSheet.create({
   },
 
   scheduleRowTime: {
-    color: colors.guru,
+    color: colors.accentText,
     fontSize: fontSize.sm,
     marginTop: 3,
   },
@@ -2005,4 +2017,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
   },
-});
+}));

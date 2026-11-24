@@ -1,3 +1,4 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Chip from './Chip';
@@ -27,6 +28,9 @@ export default function ScheduleCard({
   children,
   style,
 }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   const s = STATUS[status] ?? STATUS.upcoming;
   const active = status === 'active';
   const timeText = [formatJam(start), formatJam(end)].filter(Boolean).join(' - ');
@@ -85,7 +89,7 @@ export default function ScheduleCard({
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   card: { backgroundColor: colors.card, borderRadius: radius.lg, borderLeftWidth: 4, padding: spacing.md },
   done: { opacity: 0.6 },
   flex: { flex: 1 },
@@ -101,4 +105,4 @@ const styles = StyleSheet.create({
   timeBig: { fontSize: fontSize.md, fontWeight: fontWeight.bold },
   note: { color: colors.textMuted, fontSize: fontSize.sm, marginTop: spacing.xs },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
-});
+}));

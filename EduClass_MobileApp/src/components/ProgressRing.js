@@ -1,3 +1,4 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { useId } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
@@ -11,10 +12,15 @@ export default function ProgressRing({
   strokeWidth = 10,
   label,
   sublabel,
-  color = colors.primary,
+  color: colorProp,
   colorEnd,
-  trackColor = colors.border,
+  trackColor: trackColorProp,
 }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const color = colorProp ?? colors.primary;
+  const trackColor = trackColorProp ?? colors.border;
+  const styles = make_styles(colors);
+
   // id SVG harus unik per ring dan aman dipakai di url(#...)
   const gradientId = 'ring' + useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const value = Math.min(Math.max(Number(progress) || 0, 0), 1);
@@ -62,8 +68,8 @@ export default function ProgressRing({
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   label: { color: colors.text, fontSize: fontSize.xl, fontWeight: fontWeight.heavy },
   sublabel: { color: colors.textMuted, fontSize: fontSize.xs, marginTop: 2 },
-});
+}));

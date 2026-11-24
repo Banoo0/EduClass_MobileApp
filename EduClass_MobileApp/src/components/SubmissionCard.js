@@ -1,14 +1,19 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Chip from './Chip';
 import { formatDeadline } from '../utils/dateHelper';
 import { colors, fontSize, fontWeight, radius, spacing } from '../core/theme';
 
-const STRIPE = { danger: colors.danger, warning: colors.warning, neutral: colors.border };
+const make_STRIPE = (colors) => ({ danger: colors.danger, warning: colors.warning, neutral: colors.border });
 
 // Kartu tugas untuk guru: chip mapel + tenggat, judul, progres pengumpulan, jumlah belum dinilai.
 // Gaya sama dengan TaskCard. Tautan "Periksa" hanya muncul jika onPress diisi.
 export default function SubmissionCard({ subject, kelas, title, dueAt, submitted = 0, total = 0, ungraded = 0, onPress, style }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const STRIPE = make_STRIPE(colors);
+  const styles = make_styles(colors);
+
   const due = formatDeadline(dueAt);
   const subjectLabel = [subject, kelas].filter(Boolean).join(' - ');
   const ratio = total ? Math.min(submitted / total, 1) : 0;
@@ -55,7 +60,7 @@ export default function SubmissionCard({ subject, kelas, title, dueAt, submitted
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   card: { backgroundColor: colors.card, borderRadius: radius.lg, borderLeftWidth: 4, padding: spacing.md },
   chipRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   subjectChip: { marginRight: 'auto' },
@@ -69,4 +74,4 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.md },
   action: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   actionText: { color: colors.primary, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-});
+}));

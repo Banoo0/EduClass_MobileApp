@@ -1,14 +1,15 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Chip from './Chip';
 import { colors, fontSize, fontWeight, radius, spacing } from '../core/theme';
 
-const VARIANTS = {
+const make_VARIANTS = (colors) => ({
   danger: { fg: colors.danger, soft: colors.dangerSoft },
   primary: { fg: colors.primary, soft: colors.primarySoft },
   success: { fg: colors.success, soft: colors.successSoft },
   neutral: { fg: colors.textMuted, soft: colors.cardAlt },
-};
+});
 
 // Kartu angka ringkasan.
 // labelPosition 'bottom' = gaya Beranda siswa (ikon + badge di atas, label di bawah angka)
@@ -26,6 +27,10 @@ export default function StatCard({
   extraColored = false,
   style,
 }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const VARIANTS = make_VARIANTS(colors);
+  const styles = make_styles(colors);
+
   const v = VARIANTS[variant] ?? VARIANTS.neutral;
 
   const iconBox = icon ? (
@@ -73,7 +78,7 @@ export default function StatCard({
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
@@ -89,4 +94,4 @@ const styles = StyleSheet.create({
   extra: { flexShrink: 1, color: colors.textMuted, fontSize: fontSize.sm, fontWeight: fontWeight.semibold, marginLeft: spacing.sm },
   label: { color: colors.textMuted, fontSize: fontSize.md, marginTop: spacing.xs },
   labelTop: { flex: 1, marginTop: 0, marginRight: spacing.sm, color: colors.text, fontWeight: fontWeight.semibold },
-});
+}));

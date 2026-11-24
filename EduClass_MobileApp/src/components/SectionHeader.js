@@ -1,3 +1,4 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Chip from './Chip';
@@ -7,6 +8,9 @@ import { colors, fontSize, fontWeight, radius, spacing } from '../core/theme';
 // count: badge angka merah (opsional) | chip: { label, icon } di kanan (opsional)
 // onAction: tampilkan tautan actionLabel di kanan (opsional)
 export default function SectionHeader({ title, count, subtitle, chip, actionLabel = 'Lihat Semua', onAction, style }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   return (
     <View style={[styles.row, style]}>
       <View style={styles.titleWrap}>
@@ -39,11 +43,11 @@ export default function SectionHeader({ title, count, subtitle, chip, actionLabe
   );
 }
 
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
+const make_styles = (colors) => (StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
   titleWrap: { flex: 1 },
   titleRow: { flexDirection: 'row', alignItems: 'center' },
-  title: { flexShrink: 1, color: colors.text, fontSize: fontSize.xl, fontWeight: fontWeight.bold },
+  title: { flexShrink: 1, color: colors.text, fontSize: fontSize.lg, fontWeight: fontWeight.bold },
   count: {
     minWidth: 24,
     marginLeft: spacing.sm,
@@ -58,4 +62,4 @@ const styles = StyleSheet.create({
   right: { marginLeft: spacing.sm, flexShrink: 0 },
   action: { flexDirection: 'row', alignItems: 'center' },
   actionText: { color: colors.primary, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-});
+}));

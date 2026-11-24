@@ -1,3 +1,5 @@
+import { useAppTheme } from '../../context/ThemeContext';
+import AppBackdrop from '../../components/AppBackdrop';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,12 +14,16 @@ import { colors, radius } from '../../core/theme';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const ROLES = [
+const make_ROLES = (colors) => ([
   { key: 'siswa', title: 'Siswa', desc: 'Lihat jadwal dan kumpulkan tugas', icon: 'school-outline', accent: colors.siswa },
   { key: 'guru', title: 'Guru', desc: 'Kelola kelas, jadwal, dan tugas', icon: 'easel-outline', accent: colors.guru },
-];
+]);
 
 export default function RegisterScreen({ navigation }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const ROLES = make_ROLES(colors);
+  const styles = make_styles(colors);
+
   const { signUp } = useAuth();
   const scrollRef = useRef(null);
   const refs = { nomor: useRef(null), rombel: useRef(null), email: useRef(null), password: useRef(null), confirm: useRef(null) };
@@ -89,7 +95,7 @@ export default function RegisterScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe}><AppBackdrop />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.back} accessibilityLabel="Kembali">
@@ -170,7 +176,7 @@ export default function RegisterScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { flexGrow: 1, padding: 24, paddingBottom: 40 },
   back: { flexDirection: 'row', alignItems: 'center', marginLeft: -6, marginBottom: 20, alignSelf: 'flex-start' },
@@ -193,4 +199,4 @@ const styles = StyleSheet.create({
   footerRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   footerText: { color: colors.textMuted, fontSize: 14.5 },
   footerLink: { color: colors.primary, fontSize: 14.5, fontWeight: '700' },
-});
+}));

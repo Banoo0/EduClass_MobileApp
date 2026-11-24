@@ -1,15 +1,29 @@
+import UnreadBadge from './UnreadBadge';
+import { useUnread } from '../context/UnreadContext';
+import { useAppTheme } from '../context/ThemeContext';
+import { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import ProfileAvatar from './ProfileAvatar';
+import NotificationPanel from './NotificationPanel';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fontSize, fontWeight, radius, spacing } from '../core/theme';
 
-const VARIANTS = {
+const make_VARIANTS = (colors) => ({
   siswa: { brand: 'EduClass', logoBg: colors.primary, logoIcon: 'school', logoColor: colors.onAccent, avatar: colors.siswa },
-  guru: { brand: 'EDUCLASS GURU', logoBg: colors.primarySoft, logoIcon: 'school-outline', logoColor: colors.guru, avatar: colors.guru },
-};
+  guru: { brand: 'EDUCLASS GURU', logoBg: colors.primarySoft, logoIcon: 'school-outline', logoColor: colors.accentText, avatar: colors.guru },
+});
 
 // Header Beranda: logo + nama aplikasi + judul halaman, lonceng, dan avatar.
 // variant: 'siswa' | 'guru'. onAvatarPress biasanya membuka tab Profil.
 export default function DashboardHeader({ variant = 'siswa', title, onAvatarPress }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const VARIANTS = make_VARIANTS(colors);
+  const styles = make_styles(colors);
+
+  const { profile } = useAuth();
+  const {total}=useUnread();
+  const [notificationOpen, setNotificationOpen] = useState(false);
   const v = VARIANTS[variant] ?? VARIANTS.siswa;
   return (
     <View style={styles.header}>
@@ -17,17 +31,16 @@ export default function DashboardHeader({ variant = 'siswa', title, onAvatarPres
         <Ionicons name={v.logoIcon} size={22} color={v.logoColor} />
       </View>
       <View style={styles.titleWrap}>
-        <Text style={[styles.brand, variant === 'guru' && styles.brandCaps]} numberOfLines={1}>
-          {v.brand}
-        </Text>
+        
         <Text style={styles.title} numberOfLines={1}>
           {title}
         </Text>
       </View>
       {/* Lonceng belum punya layar notifikasi, sementara hanya tampilan */}
-      <View style={styles.iconButton} accessibilityLabel="Notifikasi">
-        <Ionicons name="notifications-outline" size={22} color={colors.text} />
-      </View>
+      <Pressable style={styles.iconButton} accessibilityLabel="Notifikasi" accessibilityRole="button" onPress={() => setNotificationOpen(true)}>
+        <Ionicons name="notifications-outline" size={22} color={colors.text} /><UnreadBadge count={total} floating/>
+      </Pressable>
+      <NotificationPanel visible={notificationOpen} onClose={() => setNotificationOpen(false)} />
       <Pressable
         onPress={onAvatarPress}
         disabled={!onAvatarPress}
@@ -35,19 +48,19 @@ export default function DashboardHeader({ variant = 'siswa', title, onAvatarPres
         accessibilityLabel="Buka profil"
         style={[styles.avatar, { backgroundColor: v.avatar }]}
       >
-        <Ionicons name="person-outline" size={20} color={colors.bg} />
+        <ProfileAvatar avatar={profile?.avatar} photo={profile?.photo_base64} size={44} color={v.avatar} />
       </Pressable>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm + spacing.xs,
+    gap: spacing.sm,
     paddingHorizontal: spacing.md + spacing.xs,
-    paddingVertical: spacing.sm + spacing.xs,
+    paddingVertical: spacing.sm,
   },
   logo: { width: 42, height: 42, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
   titleWrap: { flex: 1 },
@@ -56,4 +69,4 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: fontSize.xl, fontWeight: fontWeight.bold },
   iconButton: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },
   avatar: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-});
+}));

@@ -81,7 +81,7 @@ export async function fetchClassMeetings(classId) {
   }
 }
 
-export async function createMeeting({ classId, teacherId, pertemuanKe, tanggal, jam_mulai, jam_selesai, topik, deskripsi }) {
+export async function createMeeting({ classId, teacherId, pertemuanKe, tanggal, jam_mulai, jam_selesai, topik, deskripsi, meeting_url = "" }) {
   try {
     const classSnap = await getDoc(doc(db, 'classes', classId));
     if (!classSnap.exists() || classSnap.data().teacher_id !== teacherId) {
@@ -103,6 +103,7 @@ export async function createMeeting({ classId, teacherId, pertemuanKe, tanggal, 
         jam_selesai,
         topik: topik.trim(),
         deskripsi: deskripsi.trim(),
+        meeting_url: validateMeetingUrl(meeting_url),
         presensi_dibuka_at: null,
         presensi_ditutup_at: null,
         created_at: serverTimestamp(),
@@ -114,7 +115,7 @@ export async function createMeeting({ classId, teacherId, pertemuanKe, tanggal, 
   }
 }
 
-export async function updateMeeting({ meetingId, tanggal, jam_mulai, jam_selesai, topik, deskripsi }) {
+export async function updateMeeting({ meetingId, tanggal, jam_mulai, jam_selesai, topik, deskripsi, meeting_url = "" }) {
   try {
     const ref = doc(db, 'meetings', meetingId);
     const current = await getDoc(ref);
@@ -126,6 +127,7 @@ export async function updateMeeting({ meetingId, tanggal, jam_mulai, jam_selesai
       jam_selesai,
       topik: topik.trim(),
       deskripsi: deskripsi.trim(),
+        meeting_url: validateMeetingUrl(meeting_url),
     });
     return { data: await getMeetingOrThrow(meetingId), error: null };
   } catch (e) {
@@ -292,5 +294,42 @@ export async function fetchStudentWeekMeetings({ studentId, weekStartKey, weekEn
     return { data: { meetings, attendanceMap }, error: null };
   } catch (e) {
     return { data: empty, error: toError(e) };
+  }
+}
+
+// Only HTTPS Google Meet and Zoom links are accepted.
+export function validateMeetingUrl(value) {
+  const url = String(value || '').trim();
+  if (url && !/^https:\/\/(meet\.google\.com|([a-z0-9-]+\.)*zoom\.us)\/[^\s]+$/i.test(url)) {
+    throw new Error('Gunakan link HTTPS Google Meet atau Zoom yang valid.');
+  }
+  return url;
+}
+
+export async function fetchMeetingMemberCount(classId, teacherId) {
+  const snap = await getDocs(query(collection(db, 'class_members'),
+    where('class_id', '==', classId), where('teacher_id', '==', teacherId)));
+  return snap.size;
+}
+
+export async function markOwnAttendance(meetingId) {
+  try {
+    const studentId = auth.currentUser?.uid;
+    if (!studentId) throw new Error('Silakan login ulang.');
+    const meeting = await getMeetingOrThrow(meetingId);
+    const ref = doc(db, 'attendance', `${meetingId}_${studentId}`);
+    await runTransaction(db, async transaction => {
+      const existing = await transaction.get(ref);
+      if (existing.exists()) throw new Error('Presensi sudah tercatat.');
+      transaction.set(ref, {
+        meeting_id: meetingId, class_id: meeting.class_id,
+        teacher_id: meeting.teacher_id, student_id: studentId,
+        status: 'hadir', waktu_absen: serverTimestamp(),
+      });
+    });
+    return { data: await getMeetingAttendance(ref), error: null };
+  } catch (e) {
+    console.error('markOwnAttendance', e);
+    return { data: null, error: toError(e) };
   }
 }

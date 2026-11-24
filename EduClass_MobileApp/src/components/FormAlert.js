@@ -1,9 +1,13 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../core/theme';
 
 // Banner pesan error untuk seluruh form (mis. "Email atau password salah")
 export default function FormAlert({ message }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const styles = make_styles(colors);
+
   if (!message) return null;
   return (
     <View style={styles.box} accessibilityRole="alert">
@@ -13,7 +17,7 @@ export default function FormAlert({ message }) {
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   box: {
     flexDirection: 'row',
     backgroundColor: colors.dangerSoft,
@@ -24,4 +28,4 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   text: { flex: 1, color: colors.danger, fontSize: 13.5, lineHeight: 20 },
-});
+}));

@@ -1,19 +1,24 @@
+import { useAppTheme } from '../context/ThemeContext';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fontSize, fontWeight, radius, spacing } from '../core/theme';
 
-const TONES = {
+const make_TONES = (colors) => ({
   primary: { fg: colors.primary, bg: colors.primarySoft },
   success: { fg: colors.success, bg: colors.successSoft },
   warning: { fg: colors.warning, bg: colors.warningSoft },
   danger: { fg: colors.danger, bg: colors.dangerSoft },
   neutral: { fg: colors.textMuted, bg: colors.cardAlt },
-};
+});
 
 // Label kecil berwarna untuk badge status, chip mapel, chip tenggat, dll.
 // tone: 'primary' | 'success' | 'warning' | 'danger' | 'neutral'
 // shape: 'pill' (bulat penuh) | 'rounded' (sudut kecil, seperti chip "Matematika - 9A")
 export default function Chip({ label, tone = 'neutral', icon, dot = false, shape = 'pill', style }) {
+  const { colors, mode: appThemeMode } = useAppTheme();
+  const TONES = make_TONES(colors);
+  const styles = make_styles(colors);
+
   const t = TONES[tone] ?? TONES.neutral;
   return (
     <View style={[styles.chip, { backgroundColor: t.bg, borderRadius: shape === 'pill' ? radius.pill : radius.sm }, style]}>
@@ -26,7 +31,7 @@ export default function Chip({ label, tone = 'neutral', icon, dot = false, shape
   );
 }
 
-const styles = StyleSheet.create({
+const make_styles = (colors) => (StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -38,4 +43,4 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3, marginRight: spacing.xs + 2 },
   icon: { marginRight: spacing.xs },
   text: { flexShrink: 1, fontSize: fontSize.xs, fontWeight: fontWeight.semibold },
-});
+}));
