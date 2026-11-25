@@ -10,6 +10,7 @@ import DashboardHeader from '../../components/DashboardHeader';
 import AppButton from '../../components/AppButton';
 import AppInput from '../../components/AppInput';
 import FormAlert from '../../components/FormAlert';
+import DatePickerField from '../../components/DatePickerField';
 import { useAuth } from '../../context/AuthContext';
 import { colors, fontSize, fontWeight, radius, spacing } from '../../core/theme';
 import { createMeeting, deleteMeeting, fetchClassMeetings, fetchMeetingMemberCount, validateMeetingUrl, fetchMeetingRoster, saveMeetingAttendance, setMeetingAttendanceOpen, updateMeeting } from '../../services/meetingService';
@@ -346,7 +347,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
               
             </View>
           </View>
-          <AppInput label="Tanggal" required value={tanggal} onChangeText={setTanggal} placeholder="YYYY-MM-DD" autoCapitalize="none" />
+          <DatePickerField label="Tanggal pertemuan" required value={tanggal} onChange={setTanggal} />
           <View style={styles.dayPreview}>
             <Ionicons name="calendar-outline" size={17} color={colors.primary} />
             <Text style={styles.dayPreviewText}>Hari: {dayForDate(tanggal) || 'Pilih tanggal yang valid'}</Text>
@@ -399,7 +400,7 @@ export default function MeetingManagementScreen({ route, navigation }) {
               </View>
               {editingId === meeting.id ? (
                 <View style={styles.editForm}>
-                  <AppInput label="Tanggal" required value={editTanggal} onChangeText={setEditTanggal} placeholder="YYYY-MM-DD" autoCapitalize="none" />
+                  <DatePickerField label="Tanggal pertemuan" required value={editTanggal} onChange={setEditTanggal} />
                   <View style={styles.dayPreview}>
                     <Ionicons name="calendar-outline" size={17} color={colors.primary} />
                     <Text style={styles.dayPreviewText}>Hari: {dayForDate(editTanggal) || 'Pilih tanggal yang valid'}</Text>

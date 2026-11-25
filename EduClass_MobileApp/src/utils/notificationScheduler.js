@@ -1,8 +1,8 @@
 import { fetchStudentAssignments, fetchTeacherAssignments, fetchAssignmentSubmissions } from '../services/assignmentService';
-import { fetchStudentSchedules, fetchTeacherSchedules } from '../services/classServices';
+import { fetchStudentWeekMeetings, fetchTeacherWeekMeetings } from '../services/meetingService';
 
-const days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
 const label = d => d.toLocaleDateString('id-ID', { day:'numeric',month:'long',year:'numeric' });
+const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const dateOf = v => new Date(v?.toDate ? v.toDate() : v);
 const atEvening = (date, offset) => { const d = new Date(date); d.setDate(d.getDate()-offset); d.setHours(19,0,0,0); return d; };
 export async function fetchReminderData(uid, role, now = new Date()) {
@@ -15,11 +15,13 @@ export async function fetchReminderData(uid, role, now = new Date()) {
       return (r.data || []).map(s => ({a,s}));
     }));
     for(const {a,s} of lists.flat()) if(s.status === 'dikumpulkan') add(`sub-${s.id}`, 'Pengumpulan perlu diperiksa', `${s.student_nama || 'Siswa'} • ${a.judul}`, s.submitted_at);
-    const schedules = await fetchTeacherSchedules(uid);
+    const until = new Date(now); until.setDate(until.getDate() + 14);
+    const schedules = await fetchTeacherWeekMeetings({ teacherId: uid, weekStartKey: dateKey(now), weekEndKey: dateKey(until) });
     if(schedules.error) throw schedules.error;
     for(let i=1;i<=14;i++) {
       const date=new Date(now); date.setDate(date.getDate()+i);
-      const lessons=(schedules.data||[]).filter(x=>x.hari===days[date.getDay()]);
+      const dateKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+      const lessons=(schedules.data||[]).filter(x=>String(x.tanggal||'').slice(0,10)===dateKey);
       if(!lessons.length) continue;
       const title='Jadwal mengajar besok';
       const body=`${label(date)} • ${lessons.map(x=>`${x.classes?.nama_mapel||x.judul||'Pelajaran'} ${x.classes?.rombel||''} ${x.jam_mulai||''}`).join(', ')}`;
@@ -28,7 +30,8 @@ export async function fetchReminderData(uid, role, now = new Date()) {
       if(trigger>now) reminders.push({id:`teacher-schedule-${label(date)}`,title,body,date:trigger});
     }
   } else {
-    const [a,s] = await Promise.all([fetchStudentAssignments(uid),fetchStudentSchedules(uid)]);
+    const until = new Date(now); until.setDate(until.getDate() + 14);
+    const [a,s] = await Promise.all([fetchStudentAssignments(uid),fetchStudentWeekMeetings({ studentId: uid, weekStartKey: dateKey(now), weekEndKey: dateKey(until) })]);
     if(a.error) throw a.error; if(s.error) throw s.error;
     for(const task of a.data || []) {
       const sub = task.submission; const due = dateOf(task.deadline_at || task.deadline);
@@ -45,7 +48,8 @@ export async function fetchReminderData(uid, role, now = new Date()) {
     }
     for(let i=1;i<=14;i++) {
       const date = new Date(now); date.setDate(date.getDate()+i);
-      const lessons = (s.data || []).filter(x => x.hari === days[date.getDay()]);
+      const dateKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+      const lessons = (s.data?.meetings || []).filter(x => String(x.tanggal || '').slice(0,10) === dateKey);
       if(!lessons.length) continue;
       const title = 'Jadwal pelajaran besok'; const body = `${label(date)} • ${lessons.map(x=>`${x.classes?.nama_mapel || x.judul || 'Pelajaran'} ${x.jam_mulai || ''}`).join(', ')}`;
       const trigger = atEvening(date,1);

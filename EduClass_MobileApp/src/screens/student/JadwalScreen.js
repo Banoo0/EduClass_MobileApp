@@ -1,8 +1,7 @@
 import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
 import { useAppTheme } from '../../context/ThemeContext';
 import AppBackdrop from '../../components/AppBackdrop';
-import MonthlyCalendar from '../../components/MonthlyCalendar';
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useMemo, useState, useRef } from 'react';
 import { fetchStudentAssignments } from '../../services/assignmentService';
 import {
   ActivityIndicator,
@@ -25,7 +24,6 @@ import DashboardHeader from '../../components/DashboardHeader';
 import FormAlert from '../../components/FormAlert';
 
 import { useAuth } from '../../context/AuthContext';
-import { fetchStudentSchedules } from '../../services/classServices';
 import { fetchStudentWeekMeetings, markOwnAttendance, validateMeetingUrl } from '../../services/meetingService';
 
 import {
@@ -289,7 +287,6 @@ export default function JadwalScreen({ navigation }) {
   const { user, profile } = useAuth();
   const studentId = user?.uid || user?.id || profile?.id;
 
-  const [schedules, setSchedules] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [assignmentError, setAssignmentError] = useState('');
   const [assignmentLoading, setAssignmentLoading] = useState(true);
@@ -318,7 +315,6 @@ export default function JadwalScreen({ navigation }) {
   }, [loadAssignments]));
   const [meetings, setMeetings] = useState([]);
   const [attendanceMap, setAttendanceMap] = useState({});
-  const [teacherMap, setTeacherMap] = useState({});
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -329,16 +325,19 @@ export default function JadwalScreen({ navigation }) {
     toDateKey(new Date())
   );
 
-  // Tanggal minggu berjalan dihitung berdasarkan tanggal perangkat.
+  // Pilih tanggal pada rentang dua hari sebelum sampai dua hari sesudah hari ini.
   const now = new Date();
   const todayKey = toDateKey(now);
   const today = DAY_BY_JS[now.getDay()];
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
   const selectedDate = parseDateKey(selectedDateKey);
-  const weekStartKey = toDateKey(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
-  const weekEndKey = toDateKey(new Date(selectedDate.getFullYear(), selectedDate.getMonth()+1, 0));
-  const selectedDay = DAY_BY_JS[selectedDate.getDay()];
+  const dateWindow = useMemo(() => [-2, -1, 0, 1, 2].map((offset) => {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+    return { date, key: toDateKey(date) };
+  }), [todayKey]);
+  const weekStartKey = dateWindow[0].key;
+  const weekEndKey = dateWindow[4].key;
 
   // ===================================================
   // MEMUAT JADWAL DARI DATABASE YANG SUDAH ADA
@@ -346,10 +345,8 @@ export default function JadwalScreen({ navigation }) {
 
   const loadSchedules = useCallback(async (isRefresh = false) => {
     if (!studentId) {
-      setSchedules([]);
       setMeetings([]);
       setAttendanceMap({});
-      setTeacherMap({});
       setError('Akun siswa tidak ditemukan. Silakan login ulang.');
       setLoading(false);
       setRefreshing(false);
@@ -365,41 +362,9 @@ export default function JadwalScreen({ navigation }) {
     setError('');
 
     try {
-      const { data, error: scheduleError } =
-        await fetchStudentSchedules(studentId);
-
-      if (scheduleError) {
-        setError(scheduleError.message);
-        setSchedules([]);
-        return;
-      }
-
-      const rows = [...(data || [])].sort((a, b) => {
-        const dayDifference =
-          (DAY_ORDER[a.hari] ?? 99) -
-          (DAY_ORDER[b.hari] ?? 99);
-
-        if (dayDifference !== 0) return dayDifference;
-
-        return String(a.jam_mulai || '').localeCompare(
-          String(b.jam_mulai || '')
-        );
-      });
-
-      setSchedules(rows);
-
-      // Nama guru sudah ikut di data jadwal (classes.teacher_nama).
-      const nextTeacherMap = Object.fromEntries(
-        rows
-          .filter((item) => item.teacher_id)
-          .map((item) => [item.teacher_id, item.classes?.teacher_nama || ''])
-      );
-      setTeacherMap(nextTeacherMap);
-
-      // Pertemuan dan presensi: kegagalan membaca keduanya tidak menghilangkan jadwal.
+      // Kalender siswa menggunakan jadwal yang ditetapkan pada setiap pertemuan.
       const { data: weekData, error: meetingError } = await fetchStudentWeekMeetings({
         studentId,
-        schedules: rows,
         weekStartKey,
         weekEndKey,
       });
@@ -424,21 +389,11 @@ export default function JadwalScreen({ navigation }) {
   // DATA UNTUK KARTU DAN RINGKASAN
   // ===================================================
 
-  const todaySchedules = schedules.filter(
-    (item) => normalizeDay(item.hari) === normalizeDay(today)
-  );
-
   const selectedMeetings = meetings
     .filter((item) => String(item.tanggal || '').slice(0, 10) === selectedDateKey)
     .map((item) => ({ ...item, isMeeting: true }));
   
-  const selectedSchedules = [
-    ...schedules.filter((item) =>
-      normalizeDay(item.hari) === normalizeDay(selectedDay) &&
-      !selectedMeetings.some(m => m.class_id === item.class_id && (m.schedule_id === item.id || String(m.jam_mulai).slice(0,5) === String(item.jam_mulai).slice(0,5)))
-    ),
-    ...selectedMeetings,
-  ].sort((a, b) => String(a.jam_mulai || '').localeCompare(String(b.jam_mulai || '')));
+  const selectedSchedules = selectedMeetings.sort((a, b) => String(a.jam_mulai || '').localeCompare(String(b.jam_mulai || '')));
 
   const deadlineEntries = assignments.map(item => {
     const date = deadlineDate(item);
@@ -459,16 +414,9 @@ export default function JadwalScreen({ navigation }) {
   });
   const refreshAll = () => { loadSchedules(true); loadAssignments(); };
 
-  const totalDuration = schedules.reduce(
-    (total, item) => total + durationMinutes(item),
-    0
-  );
-
-  const todayActiveCount = todaySchedules.filter(
-    (item) =>
-      getScheduleStatus(item, todayKey, todayKey, nowMinutes) ===
-      'Sedang Berlangsung'
-  ).length;
+  const totalDuration = meetings.filter((item) => String(item.tanggal || '').slice(0, 10) === todayKey)
+    .reduce((total, item) => total + durationMinutes(item), 0);
+  const todayActiveCount = meetings.filter((item) => String(item.tanggal || '').slice(0, 10) === todayKey && getScheduleStatus(item, todayKey, todayKey, nowMinutes) === 'Sedang Berlangsung').length;
 
   const monthLabel = selectedDate.toLocaleDateString('id-ID', {
     month: 'long',
@@ -548,7 +496,17 @@ export default function JadwalScreen({ navigation }) {
           <Pressable accessibilityRole="button" accessibilityLabel="Muat ulang jadwal" onPress={refreshAll} disabled={refreshing || assignmentLoading} style={{padding:8}}><Ionicons name="refresh-outline" size={22} color={BLUE}/></Pressable>
         </View>
         <View style={[styles.calendarSection,{marginBottom:16}]}>
-          <MonthlyCalendar selectedDateKey={selectedDateKey} onChange={setSelectedDateKey} schedules={schedules} dateMarkers={dateMarkers} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateList}>
+            {dateWindow.map(({ date, key }) => {
+              const selected = key === selectedDateKey;
+              const markers = dateMarkers[key] || [];
+              return <Pressable key={key} accessibilityRole="button" onPress={() => setSelectedDateKey(key)} style={[styles.dateCard, { width: 62, height: 78 }, selected && styles.dateCardSelected]}>
+                <Text style={[styles.dateDay, selected && styles.dateTextSelected]}>{date.toLocaleDateString('id-ID', { weekday: 'short' })}</Text>
+                <Text style={[styles.dateNumber, selected && styles.dateTextSelected]}>{date.getDate()}</Text>
+                <View style={{ flexDirection: 'row', height: 8, gap: 3, alignItems: 'center' }}>{markers.slice(0, 4).map((color) => <View key={color} style={[styles.dateIndicator, { backgroundColor: color }, selected && { backgroundColor: '#FFFFFF' }]} />)}</View>
+              </Pressable>;
+            })}
+          </ScrollView>
           <View style={[styles.legend,compact && {gap:8,marginTop:8}]}>{[[BLUE,compact?'Pelajaran':'Pelajaran / pertemuan'],[colors.warning,'Tugas'],[colors.statusGreen,'Terkumpul'],[colors.danger,compact?'Terlambat':'Lewat tenggat'],[colors.statusYellow,'Revisi']].map(([color,label]) => <View key={label} style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:color}]} /><Text style={[styles.legendText,compact && {fontSize:12}]}>{label}</Text></View>)}</View>
         </View>
 
@@ -628,8 +586,7 @@ export default function JadwalScreen({ navigation }) {
               );
 
               const statusStyle = getStatusStyle(status, styles);
-              const teacherName =
-                teacherMap[item.teacher_id] || null;
+              const teacherName = item.classes?.teacher_nama || null;
               const kelas = getClassRelation(item);
               const room = getRoomText(item);
               const duration = durationMinutes(item);

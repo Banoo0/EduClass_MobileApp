@@ -561,15 +561,6 @@ export default function KelolaKelasScreen({ navigation }) {
       return;
     }
 
-    if (
-      !TIME_PATTERN.test(editJamMulai) ||
-      !TIME_PATTERN.test(editJamSelesai) ||
-      editJamSelesai <= editJamMulai
-    ) {
-      setEditError('Periksa format dan urutan jam pelajaran.');
-      return;
-    }
-
     setSavingEdit(true);
     setEditError('');
 
@@ -590,33 +581,13 @@ export default function KelolaKelasScreen({ navigation }) {
         return;
       }
 
-      const scheduleResult = await saveClassSchedule({
-        classId: editingClassId,
-        teacherId,
-        scheduleId: editingScheduleId,
-        judul: editNamaMapel,
-        hari: editHari,
-        jam_mulai: editJamMulai,
-        jam_selesai: editJamSelesai,
-        ruang: editRuang,
-        gedung: editGedung,
-      });
-
       await loadClasses(true);
-
-      if (scheduleResult.error) {
-        setEditError(
-          'Informasi kelas berhasil diperbarui, tetapi jadwal gagal disimpan: ' +
-          scheduleResult.error.message
-        );
-        return;
-      }
 
       cancelEditing();
 
       notify(
         'Perubahan tersimpan',
-        'Informasi kelas dan jadwal berhasil diperbarui.'
+        'Informasi kelas berhasil diperbarui.'
       );
     } catch (err) {
       setEditError(err.message || 'Gagal menyimpan perubahan.');
@@ -792,52 +763,6 @@ export default function KelolaKelasScreen({ navigation }) {
         onChangeText={setEditSemester}
       />
 
-      <View style={styles.divider} />
-
-      <Text style={styles.inlineSectionTitle}>
-        {editingScheduleId ? 'Edit Jadwal' : 'Tambah Jadwal'}
-      </Text>
-
-      <Text style={styles.fieldLabel}>Hari Pelajaran</Text>
-
-      <DayPicker value={editHari} onChange={setEditHari} />
-
-      <View style={styles.timeRow}>
-        <View style={styles.timeField}>
-          <AppInput
-            label="Jam Mulai"
-            required
-            value={editJamMulai}
-            onChangeText={setEditJamMulai}
-            placeholder="07:00"
-          />
-        </View>
-
-        <View style={styles.timeField}>
-          <AppInput
-            label="Jam Selesai"
-            required
-            value={editJamSelesai}
-            onChangeText={setEditJamSelesai}
-            placeholder="08:30"
-          />
-        </View>
-      </View>
-
-      <AppInput
-        label="Ruang"
-        value={editRuang}
-        onChangeText={setEditRuang}
-        placeholder="Contoh: Lab Komputer"
-      />
-
-      <AppInput
-        label="Gedung"
-        value={editGedung}
-        onChangeText={setEditGedung}
-        placeholder="Contoh: Gedung A"
-      />
-
       <FormAlert message={editError} />
 
       <AppButton
@@ -864,8 +789,6 @@ export default function KelolaKelasScreen({ navigation }) {
   // ===================================================
 
   const renderClassCard = (item, archived = false) => {
-    const schedules = sortSchedules(item.schedules || []);
-    const mainSchedule = getPrimarySchedule(item);
     const expanded = expandedClassId === item.id;
     const editing = editingClassId === item.id;
 
@@ -914,9 +837,7 @@ export default function KelolaKelasScreen({ navigation }) {
               />
 
               <Text style={styles.primaryScheduleText}>
-                {mainSchedule
-                  ? getScheduleDescription(mainSchedule)
-                  : 'Jadwal belum diatur'}
+                Jadwal diatur per pertemuan
               </Text>
             </View>
           </View>
@@ -1058,11 +979,6 @@ export default function KelolaKelasScreen({ navigation }) {
               value={item.semester || 'Belum diatur'}
             />
 
-            <DetailRow
-              label="Jumlah Jadwal"
-              value={`${schedules.length} sesi`}
-            />
-
             <View style={styles.divider} />
 
             <Pressable accessibilityRole="button" onPress={() => navigation.navigate('ChatPribadi', { classId: item.id })} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, borderRadius: 12, backgroundColor: colors.primarySoft, marginBottom: 12 }}>
@@ -1089,98 +1005,14 @@ export default function KelolaKelasScreen({ navigation }) {
             </View>
             
 
-            <View style={styles.divider} />
-
-            <View style={styles.inlineSectionHeading}>
-              <Text style={styles.detailHeading}>
-                Jadwal mingguan
-              </Text>
-
-              <Pressable
-                onPress={() => startEditing(item, null)}
-                style={styles.addScheduleButton}
-              >
-                <Ionicons
-                  name="add-circle-outline"
-                  size={18}
-                  color={colors.primary}
-                />
-
-                <Text style={styles.addScheduleText}>Tambah</Text>
-              </Pressable>
-            </View>
-
-            {schedules.length === 0 ? (
-              <Text style={styles.emptyScheduleText}>
-                Belum ada jadwal. Tekan Tambah untuk membuat jadwal pertama.
-              </Text>
-            ) : (
-              schedules.map((schedule) => (
-                <View key={schedule.id} style={styles.scheduleRow}>
-                  <View style={styles.scheduleRowIcon}>
-                    <Ionicons
-                      name="calendar-outline"
-                      size={19}
-                      color={colors.primary}
-                    />
-                  </View>
-
-                  <View style={styles.scheduleRowText}>
-                    <Text style={styles.scheduleRowTitle}>
-                      {schedule.hari}
-                    </Text>
-
-                    <Text style={styles.scheduleRowTime}>
-                      {formatTime(schedule.jam_mulai)} – {formatTime(schedule.jam_selesai)}
-                    </Text>
-
-                    <Text style={styles.scheduleRowLocation}>
-                      {getLocation(schedule)}
-                    </Text>
-                  </View>
-
-                  <Pressable
-                    onPress={() => startEditing(item, schedule)}
-                    style={styles.scheduleAction}
-                    accessibilityRole="button"
-                    accessibilityLabel="Edit jadwal"
-                  >
-                    <Ionicons
-                      name="create-outline"
-                      size={20}
-                      color={colors.primary}
-                    />
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => handleDeleteSchedule(item, schedule)}
-                    style={styles.scheduleAction}
-                    accessibilityRole="button"
-                    accessibilityLabel="Hapus jadwal"
-                    disabled={busyScheduleId === schedule.id}
-                  >
-                    {busyScheduleId === schedule.id ? (
-                      <ActivityIndicator size="small" />
-                    ) : (
-                      <Ionicons
-                        name="trash-outline"
-                        size={19}
-                        color={colors.danger}
-                      />
-                    )}
-                  </Pressable>
-                </View>
-              ))
-            )}
-
             {editing ? (
               renderEditForm(item)
             ) : (
               <View style={styles.manageActions}>
                 <AppButton
-                  title="Edit Kelas & Jadwal"
+                  title="Edit Kelas"
                   icon="create-outline"
-                  onPress={() => startEditing(item, schedules[0] || null)}
+                  onPress={() => startEditing(item)}
                 />
 
                 <View style={styles.formSecondaryButton}>

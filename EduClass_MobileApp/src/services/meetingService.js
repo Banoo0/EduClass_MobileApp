@@ -297,6 +297,44 @@ export async function fetchStudentWeekMeetings({ studentId, weekStartKey, weekEn
   }
 }
 
+export async function fetchTeacherWeekMeetings({ teacherId, weekStartKey, weekEndKey }) {
+  try {
+    const classSnap = await getDocs(query(
+      collection(db, 'classes'),
+      where('teacher_id', '==', teacherId)
+    ));
+    const results = await Promise.all(classSnap.docs.map(async (classDoc) => {
+      const klass = docToObject(classDoc);
+      const { data: meetings, error } = await fetchClassMeetings(klass.id);
+      if (error) throw error;
+      return meetings
+        .filter((meeting) => {
+          const dateKey = String(meeting.tanggal || '').slice(0, 10);
+          return dateKey >= weekStartKey && dateKey <= weekEndKey;
+        })
+        .map((meeting) => ({
+          ...meeting,
+          classes: {
+            id: klass.id,
+            nama_mapel: klass.nama_mapel || 'Kelas',
+            rombel: klass.rombel || null,
+            semester: klass.semester || null,
+            tahun_ajaran: klass.tahun_ajaran || null,
+            teacher_nama: klass.teacher_nama || null,
+          },
+        }));
+    }));
+    return {
+      data: results.flat().sort((a, b) =>
+        `${a.tanggal || ''} ${a.jam_mulai || ''}`.localeCompare(`${b.tanggal || ''} ${b.jam_mulai || ''}`)
+      ),
+      error: null,
+    };
+  } catch (e) {
+    return { data: [], error: toError(e) };
+  }
+}
+
 // Only HTTPS Google Meet and Zoom links are accepted.
 export function validateMeetingUrl(value) {
   const url = String(value || '').trim();
