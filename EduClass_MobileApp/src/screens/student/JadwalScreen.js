@@ -1,6 +1,7 @@
 import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
 import { useAppTheme } from '../../context/ThemeContext';
 import AppBackdrop from '../../components/AppBackdrop';
+import MonthlyCalendar from '../../components/MonthlyCalendar';
 import { useCallback, useMemo, useState, useRef } from 'react';
 import { fetchStudentAssignments } from '../../services/assignmentService';
 import {
@@ -37,7 +38,7 @@ import {
 function deadlineDate(item) {
   const value = item.deadline_at || item.deadline;
   if (!value) return null;
-  const date = new Date(value);
+  const date = typeof value.toDate === 'function' ? value.toDate() : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -325,25 +326,23 @@ export default function JadwalScreen({ navigation }) {
     toDateKey(new Date())
   );
 
-  // Pilih tanggal pada rentang dua hari sebelum sampai dua hari sesudah hari ini.
+  // Kalender bulanan berdasarkan tanggal pertemuan aktual.
   const now = new Date();
   const todayKey = toDateKey(now);
   const today = DAY_BY_JS[now.getDay()];
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
   const selectedDate = parseDateKey(selectedDateKey);
-  const dateWindow = useMemo(() => [-2, -1, 0, 1, 2].map((offset) => {
-    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
-    return { date, key: toDateKey(date) };
-  }), [todayKey]);
-  const weekStartKey = dateWindow[0].key;
-  const weekEndKey = dateWindow[4].key;
+  const weekStartKey = toDateKey(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+  const weekEndKey = toDateKey(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0));
 
   // ===================================================
   // MEMUAT JADWAL DARI DATABASE YANG SUDAH ADA
   // ===================================================
 
+  const meetingRequest = useRef(0);
   const loadSchedules = useCallback(async (isRefresh = false) => {
+    const request = ++meetingRequest.current;
     if (!studentId) {
       setMeetings([]);
       setAttendanceMap({});
@@ -368,20 +367,21 @@ export default function JadwalScreen({ navigation }) {
         weekStartKey,
         weekEndKey,
       });
+      if (request !== meetingRequest.current) return;
       if (meetingError) setError(meetingError.message);
       setMeetings(weekData?.meetings || []);
       setAttendanceMap(weekData?.attendanceMap || {});
     } catch (err) {
-      setError(err.message || 'Gagal memuat jadwal pelajaran.');
+      if (request === meetingRequest.current) setError(err.message || 'Gagal memuat jadwal pelajaran.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (request === meetingRequest.current) { setLoading(false); setRefreshing(false); }
     }
   }, [studentId, weekStartKey, weekEndKey]);
 
   useFocusEffect(
     useCallback(() => {
       loadSchedules();
+      return () => { meetingRequest.current++; };
     }, [loadSchedules])
   );
 
@@ -496,17 +496,7 @@ export default function JadwalScreen({ navigation }) {
           <Pressable accessibilityRole="button" accessibilityLabel="Muat ulang jadwal" onPress={refreshAll} disabled={refreshing || assignmentLoading} style={{padding:8}}><Ionicons name="refresh-outline" size={22} color={BLUE}/></Pressable>
         </View>
         <View style={[styles.calendarSection,{marginBottom:16}]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateList}>
-            {dateWindow.map(({ date, key }) => {
-              const selected = key === selectedDateKey;
-              const markers = dateMarkers[key] || [];
-              return <Pressable key={key} accessibilityRole="button" onPress={() => setSelectedDateKey(key)} style={[styles.dateCard, { width: 62, height: 78 }, selected && styles.dateCardSelected]}>
-                <Text style={[styles.dateDay, selected && styles.dateTextSelected]}>{date.toLocaleDateString('id-ID', { weekday: 'short' })}</Text>
-                <Text style={[styles.dateNumber, selected && styles.dateTextSelected]}>{date.getDate()}</Text>
-                <View style={{ flexDirection: 'row', height: 8, gap: 3, alignItems: 'center' }}>{markers.slice(0, 4).map((color) => <View key={color} style={[styles.dateIndicator, { backgroundColor: color }, selected && { backgroundColor: '#FFFFFF' }]} />)}</View>
-              </Pressable>;
-            })}
-          </ScrollView>
+          <MonthlyCalendar selectedDateKey={selectedDateKey} onChange={setSelectedDateKey} dateMarkers={dateMarkers} />
           <View style={[styles.legend,compact && {gap:8,marginTop:8}]}>{[[BLUE,compact?'Pelajaran':'Pelajaran / pertemuan'],[colors.warning,'Tugas'],[colors.statusGreen,'Terkumpul'],[colors.danger,compact?'Terlambat':'Lewat tenggat'],[colors.statusYellow,'Revisi']].map(([color,label]) => <View key={label} style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:color}]} /><Text style={[styles.legendText,compact && {fontSize:12}]}>{label}</Text></View>)}</View>
         </View>
 

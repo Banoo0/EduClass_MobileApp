@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, useRef } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { FloatingSafeAreaView } from '../../components/FloatingTabBar';
 import AppBackdrop from '../../components/AppBackdrop';
+import MonthlyCalendar from '../../components/MonthlyCalendar';
 import DashboardHeader from '../../components/DashboardHeader';
 import FormAlert from '../../components/FormAlert';
 import { useAuth } from '../../context/AuthContext';
@@ -27,14 +28,12 @@ export default function JadwalScreen({ navigation }) {
   const selectedKey = keyOf(selectedDate);
   const todayDate = new Date();
   const todayKey = keyOf(todayDate);
-  const visibleDates = useMemo(() => [-2, -1, 0, 1, 2].map((offset) => {
-    const date = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate() + offset);
-    return { date, key: keyOf(date) };
-  }), [todayKey]);
-  const rangeStart = visibleDates[0].key;
-  const rangeEnd = visibleDates[4].key;
+  const rangeStart = keyOf(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+  const rangeEnd = keyOf(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0));
+  const requestRef = useRef(0);
 
   const loadMeetings = useCallback(async (refresh = false) => {
+    const request = ++requestRef.current;
     if (!teacherId) {
       setMeetings([]);
       setError('Akun guru tidak ditemukan. Silakan login ulang.');
@@ -45,13 +44,14 @@ export default function JadwalScreen({ navigation }) {
     refresh ? setRefreshing(true) : setLoading(true);
     setError('');
     const result = await fetchTeacherWeekMeetings({ teacherId, weekStartKey: rangeStart, weekEndKey: rangeEnd });
+    if (request !== requestRef.current) return;
     if (result.error) setError(result.error.message || 'Gagal memuat pertemuan.');
     setMeetings(result.data || []);
     setLoading(false);
     setRefreshing(false);
   }, [teacherId, rangeStart, rangeEnd]);
 
-  useFocusEffect(useCallback(() => { loadMeetings(); }, [loadMeetings]));
+  useFocusEffect(useCallback(() => { loadMeetings(); return () => { requestRef.current++; }; }, [loadMeetings]));
   const selectedMeetings = useMemo(() => meetings
     .filter((meeting) => String(meeting.tanggal || '').slice(0, 10) === selectedKey)
     .sort((a, b) => String(a.jam_mulai || '').localeCompare(String(b.jam_mulai || ''))), [meetings, selectedKey]);
@@ -63,21 +63,11 @@ export default function JadwalScreen({ navigation }) {
       <AppBackdrop />
       <DashboardHeader variant="guru" title="Jadwal" onAvatarPress={() => navigation.navigate('Profil')} />
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadMeetings(true)} tintColor={colors.primary} />}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateStrip}>
-          {visibleDates.map(({ date, key }) => {
-            const selected = key === selectedKey;
-            const currentDay = key === todayKey;
-            return <Pressable key={key} accessibilityRole="button" accessibilityLabel={date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })} onPress={() => setSelectedDate(date)} style={[styles.dateCard, selected && styles.dateSelected]}>
-              <Text style={[styles.dateDay, selected && styles.dateTextSelected]}>{date.toLocaleDateString('id-ID', { weekday: 'short' })}</Text>
-              <Text style={[styles.dateNumber, selected && styles.dateTextSelected]}>{date.getDate()}</Text>
-              <View style={[styles.dateDot, markers[key] && styles.dateDotMarked, selected && styles.dateDotSelected, !currentDay && !markers[key] && styles.dateDotHidden]} />
-            </Pressable>;
-          })}
-        </ScrollView>
+        <MonthlyCalendar selectedDateKey={selectedKey} onChange={(key) => { const [y,m,d] = key.split('-').map(Number); setSelectedDate(new Date(y,m-1,d)); }} dateMarkers={markers} />
         <Text style={styles.heading}>{heading}</Text>
         <FormAlert message={error} />
         {loading ? <ActivityIndicator style={{ padding: 28 }} color={colors.primary} /> : selectedMeetings.length === 0 ? (
-          <View style={styles.empty}><Ionicons name="calendar-clear-outline" size={28} color={colors.textMuted} /><Text style={styles.emptyTitle}>Belum ada pertemuan</Text><Text style={styles.muted}>Buat pertemuan dari halaman kelas. Tanggal dan jam diatur untuk setiap pertemuan.</Text></View>
+          <View style={styles.empty}><Ionicons name="calendar-clear-outline" size={28} color={colors.textMuted} /><Text style={styles.emptyTitle}>Belum ada pertemuan</Text><Text style={styles.muted}>Buat pertemuan melalui Kelola Kelas.</Text></View>
         ) : selectedMeetings.map((meeting) => {
           const klass = meeting.classes || {};
           const start = new Date(`${meeting.tanggal}T${time(meeting.jam_mulai)}:00`);

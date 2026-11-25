@@ -1,3 +1,6 @@
+import { PetPanelProvider } from '../components/PetPanelContext';
+import StreakPetOverlay from '../components/StreakPetOverlay';
+import { useIsFocused } from '@react-navigation/native';
 import { ThemeProvider as NavigationThemeProvider, useTheme as useNavigationTheme } from '@react-navigation/native';
 import { renderFocusedTabScene } from '../components/FocusedTabScene';
 import { useAppTheme } from '../context/ThemeContext';
@@ -74,11 +77,12 @@ const ICONS = {
 export default function StudentTabs() {
   const { colors, mode: appThemeMode } = useAppTheme();
 
+  const focused = useIsFocused();
   const navigationTheme = useNavigationTheme();
   const transparentTheme = { ...navigationTheme, colors: { ...navigationTheme.colors, background: 'transparent' } };
 
   return (
-    <FloatingDockProvider>
+    <PetPanelProvider><FloatingDockProvider>
     <NavigationThemeProvider value={transparentTheme}>
     <Tab.Navigator
       screenLayout={renderFocusedTabScene}
@@ -112,6 +116,7 @@ export default function StudentTabs() {
       />
     </Tab.Navigator>
     </NavigationThemeProvider>
-    </FloatingDockProvider>
+    <StreakPetOverlay focused={focused} />
+    </FloatingDockProvider></PetPanelProvider>
   );
 }
